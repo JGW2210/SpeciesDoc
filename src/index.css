@@ -1153,6 +1153,190 @@ textarea {
   opacity: 0.6;
 }
 
+/* ------------------------------------------------------- view toggle ------ */
+.viewbar {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.viewbar__btn {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  transition: background 0.15s, color 0.15s;
+}
+.viewbar__btn.is-on {
+  background: var(--surface);
+  color: var(--accent-deep);
+  box-shadow: var(--shadow);
+}
+
+/* ------------------------------------------------------------ tree view --- */
+.tree__bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.tree__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.18rem;
+  margin: 0;
+}
+.tree__sub {
+  margin: 3px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.tree__refresh {
+  white-space: nowrap;
+  flex: none;
+}
+
+.tree__stage {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(circle at 50% 48%, #ffffff 0%, var(--surface-2) 78%);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.tree__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hull__label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.tree__link {
+  stroke: var(--border-strong);
+  stroke-width: 1.3px;
+}
+.tree__greek {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  fill: var(--ink-soft);
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+}
+
+.treenode {
+  animation: floaty 6s ease-in-out infinite;
+  transform-box: fill-box;
+}
+.treenode__dot {
+  cursor: pointer;
+  stroke: #fff;
+  stroke-width: 1.5px;
+  transition: r 0.12s;
+}
+.treenode__dot:hover {
+  r: 7;
+}
+.treenode__dot.is-sel {
+  stroke: var(--accent-deep);
+  stroke-width: 2px;
+}
+.treenode__label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-style: italic;
+  fill: var(--ink);
+  cursor: pointer;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 2.6px;
+  stroke-linejoin: round;
+}
+.treenode__label:hover {
+  fill: var(--accent-deep);
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(0, -5px);
+  }
+}
+
+/* node detail drawer */
+.treedetail {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: min(310px, calc(100% - 28px));
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 40px -18px rgba(20, 23, 29, 0.5);
+  padding: 16px 16px 14px;
+  animation: rise 0.2s ease both;
+}
+.treedetail__close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  border: none;
+  background: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--muted);
+}
+.treedetail__close:hover {
+  color: var(--ink);
+}
+.treedetail__name {
+  font-family: var(--font-mono);
+  font-size: 1.02rem;
+  margin: 0 22px 8px 0;
+}
+.treedetail__name em {
+  font-style: italic;
+}
+.treedetail__crumb {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.treedetail__crumb--none {
+  color: var(--muted);
+  font-style: italic;
+}
+.treedetail__sep {
+  color: var(--muted);
+}
+.treedetail__readout {
+  margin-bottom: 12px;
+}
+.treedetail__edit {
+  width: 100%;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

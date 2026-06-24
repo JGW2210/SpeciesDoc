@@ -1,0 +1,266 @@
+import { useMemo, useState } from "react";
+import {
+  hierarchy,
+  cluster,
+  type HierarchyPointNode,
+  type HierarchyPointLink,
+} from "d3-hierarchy";
+import { polygonHull, polygonCentroid } from "d3-polygon";
+import { buildTaxonomy, lineageStats, type TaxNode } from "../lib/taxonomy";
+import { binomial } from "../lib/format";
+import { CATEGORIES } from "../data/categories";
+import type { Species } from "../types";
+
+const SIZE = 1000;
+const C = SIZE / 2;
+const RADIUS = 332; // radius of the leaf ring
+const HULL_PAD = 30;
+
+// Soft phylum tints — deliberately low-chroma to echo the grey blobs of the
+// reference figure while staying within the app's palette.
+const PHYLUM_COLORS = [
+  "#6a2c91",
+  "#c12968",
+  "#0e7c86",
+  "#9a6a16",
+  "#2f6f4f",
+  "#3a567a",
+  "#8a4b9c",
+  "#b2563a",
+  "#4d6b8a",
+];
+
+function colorFor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return PHYLUM_COLORS[h % PHYLUM_COLORS.length];
+}
+
+// Polar (angle from d3 cluster, radius) → cartesian, centre at origin.
+function pos(node: HierarchyPointNode<TaxNode>): [number, number] {
+  const a = node.x - Math.PI / 2;
+  return [node.y * Math.cos(a), node.y * Math.sin(a)];
+}
+
+interface TreeViewProps {
+  species: Species[];
+  enriching: boolean;
+  onRefreshLineage: () => void;
+  onEdit: (s: Species) => void;
+}
+
+export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
+  const [selected, setSelected] = useState<Species | null>(null);
+
+  const { leaves, links, hulls } = useMemo(() => {
+    const data = buildTaxonomy(species);
+    const root = cluster<TaxNode>().size([2 * Math.PI, RADIUS]).separation((a, b) =>
+      (a.parent === b.parent ? 1 : 2) / (a.depth || 1),
+    )(hierarchy(data));
+
+    const allLeaves = root.leaves();
+    const allLinks = root.links();
+
+    // One hull per phylum (the depth-1 nodes), wrapping its descendant leaves.
+    const phyla = root.children ?? [];
+    const hullShapes = phyla.map((p) => {
+      const pts = p.leaves().map(pos);
+      // include the phylum's own anchor so single-leaf phyla still get a blob
+      pts.push(pos(p));
+      const color = colorFor(p.data.name);
+      const hull = pts.length >= 3 ? polygonHull(pts as [number, number][]) : null;
+
+      let path: string;
+      let labelAt: [number, number];
+      if (hull) {
+        const [cx, cy] = polygonCentroid(hull);
+        const padded = hull.map(([x, y]) => {
+          const dx = x - cx;
+          const dy = y - cy;
+          const len = Math.hypot(dx, dy) || 1;
+          return [x + (dx / len) * HULL_PAD, y + (dy / len) * HULL_PAD] as [number, number];
+        });
+        path = "M" + padded.map((q) => q.join(",")).join("L") + "Z";
+        // label near the outermost vertex
+        labelAt = padded.reduce((far, q) => (Math.hypot(...q) > Math.hypot(...far) ? q : far), padded[0]);
+      } else {
+        // 1–2 leaves: draw a circle blob around the centroid
+        const cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+        const cy = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+        const r = Math.max(...pts.map((q) => Math.hypot(q[0] - cx, q[1] - cy))) + HULL_PAD;
+        path = `M ${cx - r},${cy} a ${r},${r} 0 1,0 ${r * 2},0 a ${r},${r} 0 1,0 ${-r * 2},0`;
+        labelAt = [cx, cy - r];
+      }
+      return { name: p.data.name, color, path, labelAt };
+    });
+
+    return { leaves: allLeaves, links: allLinks, hulls: hullShapes };
+  }, [species]);
+
+  if (species.length === 0) {
+    return (
+      <div className="empty">
+        <p className="empty__head">Nothing to branch yet.</p>
+        <p className="empty__sub">Log a few isolates and they’ll appear here as a taxonomic tree.</p>
+      </div>
+    );
+  }
+
+  const { missing } = lineageStats(species);
+
+  return (
+    <div className="tree">
+      <div className="tree__bar">
+        <div>
+          <h2 className="tree__title">Taxonomic tree</h2>
+          <p className="tree__sub">
+            Topology from GBIF lineage · branches are ranks, not evolutionary distance
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn--ghost tree__refresh"
+          onClick={onRefreshLineage}
+          disabled={enriching || missing === 0}
+          title="Look up lineage from GBIF for isolates that don't have it yet"
+        >
+          {enriching ? "Fetching…" : missing > 0 ? `Fetch lineage (${missing})` : "Lineage up to date"}
+        </button>
+      </div>
+
+      <div className="tree__stage">
+        <svg className="tree__svg" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="Taxonomic tree of logged isolates">
+          <g transform={`translate(${C},${C})`}>
+            {/* phylum blobs */}
+            {hulls.map((h) => (
+              <g key={h.name} className="hull">
+                <path d={h.path} fill={h.color} fillOpacity={0.1} stroke={h.color} strokeOpacity={0.28} />
+                <text
+                  className="hull__label"
+                  x={h.labelAt[0]}
+                  y={h.labelAt[1]}
+                  fill={h.color}
+                  textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
+                >
+                  {h.name}
+                </text>
+              </g>
+            ))}
+
+            {/* branches */}
+            <g className="tree__links" fill="none">
+              {links.map((lk: HierarchyPointLink<TaxNode>, i) => {
+                const [sx, sy] = pos(lk.source);
+                const [tx, ty] = pos(lk.target);
+                return <path key={i} className="tree__link" d={`M${sx},${sy}L${tx},${ty}`} />;
+              })}
+            </g>
+
+            {/* greek class tags for Proteobacteria */}
+            {links
+              .map((l) => l.target)
+              .filter((n) => n.data.rank === "class" && n.data.tag)
+              .map((n) => {
+                const [x, y] = pos(n);
+                return (
+                  <text key={n.data.name} className="tree__greek" x={x} y={y} textAnchor="middle">
+                    {n.data.tag}
+                  </text>
+                );
+              })}
+
+            {/* isolate tips */}
+            {leaves.map((leaf, i) => {
+              const angleDeg = (leaf.x * 180) / Math.PI - 90;
+              const flip = leaf.x >= Math.PI;
+              const s = leaf.data.isolate!;
+              const isSel = selected?.id === s.id;
+              const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
+              const color = phylum ? colorFor(phylum.data.name) : "#5b6573";
+              return (
+                <g key={s.id} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
+                  <g
+                    className="treenode"
+                    style={{ animationDelay: `${(i % 12) * -0.5}s`, animationDuration: `${6 + (i % 5)}s` }}
+                  >
+                    <circle
+                      className={`treenode__dot${isSel ? " is-sel" : ""}`}
+                      r={isSel ? 7 : 4.5}
+                      fill={color}
+                      onClick={() => setSelected(s)}
+                    />
+                    <text
+                      className="treenode__label"
+                      transform={flip ? "rotate(180)" : undefined}
+                      x={flip ? -10 : 10}
+                      dy="0.31em"
+                      textAnchor={flip ? "end" : "start"}
+                      onClick={() => setSelected(s)}
+                    >
+                      {binomial(s.genus, s.species)}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+
+        {selected && (
+          <aside className="treedetail">
+            <button className="treedetail__close" onClick={() => setSelected(null)} aria-label="Close">
+              ×
+            </button>
+            <h3 className="treedetail__name">
+              <em>{binomial(selected.genus, selected.species)}</em>
+            </h3>
+            <Lineagecrumb species={selected} />
+            <Readout species={selected} />
+            <button className="btn btn--ghost treedetail__edit" onClick={() => onEdit(selected)}>
+              Edit isolate
+            </button>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Lineagecrumb({ species }: { species: Species }) {
+  const lin = species.lineage;
+  if (!lin || lin.matchType === "NONE") {
+    return <p className="treedetail__crumb treedetail__crumb--none">No GBIF lineage — grouped by Gram.</p>;
+  }
+  const parts = [lin.phylum, lin.class, lin.order, lin.family, lin.genus].filter(Boolean);
+  return (
+    <p className="treedetail__crumb">
+      {parts.map((p, i) => (
+        <span key={i}>
+          {i > 0 && <span className="treedetail__sep"> › </span>}
+          {p}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+const CHIP_KEYS = CATEGORIES.filter((c) => c.key !== "other_notes");
+
+function Readout({ species }: { species: Species }) {
+  const results = CHIP_KEYS.map((cat) => ({ cat, value: species[cat.key] })).filter(
+    (r): r is { cat: (typeof CHIP_KEYS)[number]; value: string } => !!r.value && r.value.trim() !== "",
+  );
+  if (results.length === 0) {
+    return <p className="treedetail__crumb treedetail__crumb--none">No test results recorded.</p>;
+  }
+  return (
+    <ul className="readout treedetail__readout">
+      {results.map(({ cat, value }) => (
+        <li key={cat.key} className="rchip rchip--neutral">
+          <span className="rchip__k">{cat.short}</span>
+          <span className="rchip__v">{value}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}

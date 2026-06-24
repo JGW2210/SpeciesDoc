@@ -13,6 +13,9 @@ create table if not exists public.species (
   genus             text not null,
   species           text not null,
 
+  -- cached GBIF taxonomic lineage (for the tree view)
+  lineage           jsonb,
+
   -- biochemical / morphological test panel
   gram              text,
   oxidase           text,

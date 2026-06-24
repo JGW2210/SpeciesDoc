@@ -1,9 +1,23 @@
+// Taxonomic lineage fetched from the GBIF backbone, cached on the row.
+export interface Lineage {
+  kingdom?: string | null;
+  phylum?: string | null;
+  class?: string | null;
+  order?: string | null;
+  family?: string | null;
+  genus?: string | null;
+  species?: string | null;
+  matchType?: string | null; // EXACT | FUZZY | HIGHERRANK | NONE
+  fetchedAt: string;
+}
+
 // Database row shape. Test fields are nullable free text.
 export interface Species {
   id: string;
   created_at: string;
   genus: string;
   species: string;
+  lineage: Lineage | null;
   gram: string | null;
   oxidase: string | null;
   catalase: string | null;
@@ -26,8 +40,8 @@ export interface Species {
   other_notes: string | null;
 }
 
-// Everything except id/created_at — what the form collects and writes.
-export type SpeciesDraft = Omit<Species, "id" | "created_at">;
+// Everything the form collects and writes (lineage is fetched, not entered).
+export type SpeciesDraft = Omit<Species, "id" | "created_at" | "lineage">;
 
 // The set of test-result column keys (excludes genus/species).
 export type TestKey = Exclude<keyof SpeciesDraft, "genus" | "species">;

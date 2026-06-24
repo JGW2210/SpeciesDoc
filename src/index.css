@@ -662,6 +662,16 @@ textarea {
 .filterpanel__clear:hover {
   text-decoration: underline;
 }
+.filterpanel__section {
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px dashed var(--border-strong);
+}
+.filterpanel__section:first-of-type {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
+}
 .filterpanel__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -670,11 +680,78 @@ textarea {
 .fitem {
   min-width: 0;
 }
+/* section heading inside the filter panel */
 .fitem__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+/* per-test label within the ID grid */
+.fitem__sublabel {
   font-size: 0.78rem;
   font-weight: 550;
   color: var(--ink-soft);
   margin-bottom: 6px;
+}
+
+/* date filter */
+.dpresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.dpreset {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.dpreset:hover {
+  border-color: var(--accent);
+}
+.dpreset.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.drange {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.drange__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.drange__field input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.drange__field input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .fitem__opts {
   display: flex;

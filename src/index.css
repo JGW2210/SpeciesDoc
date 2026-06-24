@@ -86,10 +86,11 @@ textarea {
 }
 
 /* ----------------------------------------------------------------- shell --- */
+/* Full-bleed: content spans the viewport and is anchored to the left, with a
+   modest gutter on larger screens rather than a centered fixed-width column. */
 .shell {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: clamp(18px, 4vw, 40px) clamp(16px, 4vw, 36px) 56px;
+  width: 100%;
+  padding: clamp(18px, 4vw, 40px) clamp(16px, 3vw, 44px) 56px;
 }
 
 /* --------------------------------------------------------------- masthead -- */
@@ -209,9 +210,85 @@ textarea {
   position: sticky;
   top: 20px;
 }
+
+/* Mobile bottom bar + backdrop are desktop-hidden; the form is a static column. */
+.mobilebar,
+.backdrop {
+  display: none;
+}
+
 @media (max-width: 880px) {
+  /* leave room for the fixed bottom bar */
+  .shell {
+    padding-bottom: 88px;
+  }
+
+  /* The entry form becomes a slide-up sheet toggled from the bottom bar. */
   .layout__form {
-    position: static;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 64px; /* sits above the bar */
+    z-index: 50;
+    max-height: 82vh;
+    overflow-y: auto;
+    padding: 4px clamp(12px, 4vw, 20px) 20px;
+    background: var(--bg);
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    box-shadow: 0 -16px 40px -16px rgba(20, 23, 29, 0.4);
+    transform: translateY(calc(100% + 64px));
+    transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .layout__form.is-open {
+    transform: translateY(0);
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(20, 23, 29, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.28s ease;
+  }
+  .backdrop.is-shown {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mobilebar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: 10px clamp(12px, 4vw, 20px);
+    background: var(--surface);
+    border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -4px 16px -10px rgba(20, 23, 29, 0.3);
+  }
+  .mobilebar__btn {
+    flex: 1;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 13px 18px;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1rem;
+    box-shadow: 0 6px 16px -8px rgba(14, 124, 134, 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout__form,
+  .backdrop {
+    transition: none;
   }
 }
 
@@ -247,6 +324,20 @@ textarea {
   font-style: italic;
 }
 
+.form__editing {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid #bfe0e2;
+  color: var(--accent-deep);
+  font-size: 0.82rem;
+}
+.form__editing em {
+  font-family: var(--font-mono);
+  font-style: italic;
+}
+
 .form__name {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -257,6 +348,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0; /* allow the input to shrink inside the grid instead of overflowing */
 }
 .field__label {
   font-size: 0.72rem;
@@ -266,6 +358,8 @@ textarea {
   font-weight: 600;
 }
 .field__input {
+  width: 100%;
+  min-width: 0; /* text inputs default to ~20ch; without this they overflow the grid cell */
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   padding: 9px 11px;
@@ -307,6 +401,9 @@ textarea {
   gap: 14px 16px;
   margin-top: 8px;
 }
+.tfield {
+  min-width: 0; /* let cell contents shrink rather than overflow the column */
+}
 .tfield--wide {
   grid-column: 1 / -1;
 }
@@ -319,7 +416,8 @@ textarea {
 
 /* segmented +/- control */
 .seg {
-  display: inline-flex;
+  display: flex;
+  max-width: 100%; /* never spill past the column */
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -559,6 +657,10 @@ textarea {
   position: relative;
   animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
+.card--editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
+}
 /* a thin stain stripe down the side, coloured by the band it sits in */
 .card::before {
   content: "";
@@ -608,6 +710,22 @@ textarea {
   font-size: 0.74rem;
   color: var(--muted);
   white-space: nowrap;
+}
+.card__action {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.card__action:hover {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
 }
 .card__del {
   border: none;

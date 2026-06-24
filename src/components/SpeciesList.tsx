@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
-import type { Species } from "../types";
+import type { Species, TestKey } from "../types";
 import { GRAM_GROUPS, gramGroupOf, binomial } from "../lib/format";
+import { CATEGORIES } from "../data/categories";
 import SpeciesCard from "./SpeciesCard";
+
+// Only the discrete tests (those with fixed options) make sense as filters.
+const FILTERABLE = CATEGORIES.filter((c) => !!c.options);
+
+type Filters = Partial<Record<TestKey, string>>;
 
 interface SpeciesListProps {
   species: Species[];
@@ -19,12 +25,34 @@ export default function SpeciesList({
   onDelete,
 }: SpeciesListProps) {
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<Filters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const activeKeys = Object.keys(filters) as TestKey[];
+  const activeCount = activeKeys.length;
+
+  // Click a value to set it; click the same value again to clear that test.
+  const toggleFilter = (key: TestKey, value: string) =>
+    setFilters((f) => {
+      const next = { ...f };
+      if (next[key] === value) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+
+  const clearFilters = () => setFilters({});
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return species;
-    return species.filter((s) => binomial(s.genus, s.species).toLowerCase().includes(q));
-  }, [species, query]);
+    return species.filter((s) => {
+      if (q && !binomial(s.genus, s.species).toLowerCase().includes(q)) return false;
+      for (const key of Object.keys(filters) as TestKey[]) {
+        const want = filters[key]!.toLowerCase();
+        if ((s[key] ?? "").trim().toLowerCase() !== want) return false;
+      }
+      return true;
+    });
+  }, [species, query, filters]);
 
   const grouped = useMemo(() => {
     return GRAM_GROUPS.map((group) => ({
@@ -52,15 +80,84 @@ export default function SpeciesList({
     <div className="list">
       <div className="list__bar">
         <h2 className="list__title">Isolate log</h2>
-        <input
-          className="list__search"
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by name…"
-          aria-label="Filter isolates by name"
-        />
+        <div className="list__tools">
+          <input
+            className="list__search"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by name…"
+            aria-label="Filter isolates by name"
+          />
+          <button
+            type="button"
+            className={`filterbtn${filterOpen ? " is-open" : ""}${activeCount ? " has-active" : ""}`}
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((o) => !o)}
+          >
+            ID filter
+            {activeCount > 0 && <span className="filterbtn__badge">{activeCount}</span>}
+          </button>
+        </div>
       </div>
+
+      {filterOpen && (
+        <div className="filterpanel">
+          <div className="filterpanel__head">
+            <span className="filterpanel__title">Filter by ID characteristic</span>
+            {activeCount > 0 && (
+              <button type="button" className="filterpanel__clear" onClick={clearFilters}>
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="filterpanel__grid">
+            {FILTERABLE.map((cat) => (
+              <div key={cat.key} className="fitem">
+                <div className="fitem__label">{cat.label}</div>
+                <div className="fitem__opts">
+                  {cat.options!.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`fopt${filters[cat.key] === opt.value ? " is-on" : ""}`}
+                      title={opt.title ?? opt.value}
+                      onClick={() => toggleFilter(cat.key, opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeCount > 0 && (
+        <div className="activefilters">
+          {activeKeys.map((key) => {
+            const cat = FILTERABLE.find((c) => c.key === key)!;
+            return (
+              <button
+                key={key}
+                type="button"
+                className="activefilters__chip"
+                onClick={() => setFilters((f) => {
+                  const next = { ...f };
+                  delete next[key];
+                  return next;
+                })}
+                title="Remove filter"
+              >
+                <span className="activefilters__k">{cat.short}</span>
+                <span className="activefilters__v">{filters[key]}</span>
+                <span className="activefilters__x">×</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {grouped.map(({ group, items }) => {
         if (items.length === 0) return null;
@@ -92,7 +189,7 @@ export default function SpeciesList({
       })}
 
       {filtered.length === 0 && (
-        <p className="list__status">No isolates match “{query}”.</p>
+        <p className="list__status">No isolates match the current filters.</p>
       )}
     </div>
   );

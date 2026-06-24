@@ -157,3 +157,39 @@ export const CATEGORY_BY_KEY: Record<TestKey, Category> = CATEGORIES.reduce(
   },
   {} as Record<TestKey, Category>,
 );
+
+// Collapsible subsections for the entry form, grouping the panel into
+// microbiology-sensible sets so unused tests can be folded away.
+export interface CategoryGroup {
+  name: string;
+  keys: TestKey[];
+  defaultOpen?: boolean;
+}
+
+export const CATEGORY_GROUPS: CategoryGroup[] = [
+  {
+    name: "Microscopy & morphology",
+    defaultOpen: true,
+    keys: ["gram", "distinctive_shape", "motility", "spores"],
+  },
+  {
+    name: "Key enzymes",
+    defaultOpen: true,
+    keys: ["oxidase", "catalase", "coagulase", "dnase", "aesculin", "pyr_pyz", "tributyrin"],
+  },
+  {
+    name: "Biochemical & metabolism",
+    keys: ["indole", "methyl_red", "voges_proskauer", "citrate", "fermentation", "hugh_leifson_of"],
+  },
+  {
+    name: "Culture",
+    keys: ["haemolysis", "atmosphere"],
+  },
+  {
+    name: "Notes",
+    keys: ["other_notes"],
+  },
+];
+
+export const DEFAULT_OPEN_GROUPS = CATEGORY_GROUPS.filter((g) => g.defaultOpen).map((g) => g.name);
+

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { CATEGORIES } from "../data/categories";
+import { CATEGORY_BY_KEY, CATEGORY_GROUPS, DEFAULT_OPEN_GROUPS } from "../data/categories";
 import type { Category, QuickOption } from "../data/categories";
 import type { Species, SpeciesDraft, TestKey } from "../types";
 import { binomial } from "../lib/format";
+
+const hasValue = (v: string | null | undefined) => v != null && String(v).trim() !== "";
 
 // Bucket options by their `group`, preserving first-seen order of both groups
 // and options. Options without a group fall under "".
@@ -47,7 +49,7 @@ const EMPTY: SpeciesDraft = {
 
 // Strip the server-managed fields so an existing row can seed the form.
 function toDraft(s: Species): SpeciesDraft {
-  const { id: _id, created_at: _created, ...rest } = s;
+  const { id: _id, created_at: _created, lineage: _lineage, ...rest } = s;
   return rest;
 }
 
@@ -62,11 +64,21 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
   const [draft, setDraft] = useState<SpeciesDraft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(DEFAULT_OPEN_GROUPS));
 
   // Load the selected row into the form when entering edit mode; clear on exit.
+  // When editing, also open any group that already holds data so it's visible.
   useEffect(() => {
-    setDraft(editing ? toDraft(editing) : EMPTY);
+    const next = editing ? toDraft(editing) : EMPTY;
+    setDraft(next);
     setError(null);
+    const open = new Set(DEFAULT_OPEN_GROUPS);
+    if (editing) {
+      for (const g of CATEGORY_GROUPS) {
+        if (g.keys.some((k) => hasValue(next[k]))) open.add(g.name);
+      }
+    }
+    setOpenGroups(open);
   }, [editing]);
 
   const isEditing = !!editing;
@@ -77,6 +89,18 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
   // Click a selected chip again to clear it.
   const toggle = (key: TestKey, value: string) =>
     setDraft((d) => ({ ...d, [key]: d[key] === value ? null : value }));
+
+  const toggleGroup = (name: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const allOpen = openGroups.size === CATEGORY_GROUPS.length;
+  const toggleAll = () =>
+    setOpenGroups(allOpen ? new Set() : new Set(CATEGORY_GROUPS.map((g) => g.name)));
 
   const canSave = draft.genus.trim() !== "" && draft.species.trim() !== "" && !disabled && !saving;
 
@@ -144,20 +168,51 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
         </label>
       </div>
 
-      <fieldset className="form__panel">
-        <legend className="form__panel-legend">Test panel</legend>
-        <div className="form__grid">
-          {CATEGORIES.map((cat) => (
-            <Field
-              key={cat.key}
-              cat={cat}
-              value={draft[cat.key]}
-              onSelect={(v) => toggle(cat.key, v)}
-              onText={(v) => set(cat.key, v === "" ? null : v)}
-            />
-          ))}
+      <div className="form__panel">
+        <div className="form__panel-bar">
+          <span className="form__panel-legend">Test panel</span>
+          <button type="button" className="form__panel-toggle" onClick={toggleAll}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
         </div>
-      </fieldset>
+
+        {CATEGORY_GROUPS.map((group) => {
+          const open = openGroups.has(group.name);
+          const filled = group.keys.filter((k) => hasValue(draft[k])).length;
+          return (
+            <section key={group.name} className={`fgroup${open ? " is-open" : ""}`}>
+              <button
+                type="button"
+                className="fgroup__head"
+                aria-expanded={open}
+                onClick={() => toggleGroup(group.name)}
+              >
+                <span className="fgroup__chev" aria-hidden="true">
+                  ▸
+                </span>
+                <span className="fgroup__name">{group.name}</span>
+                {filled > 0 && <span className="fgroup__badge">{filled}</span>}
+              </button>
+              {open && (
+                <div className="form__grid">
+                  {group.keys.map((k) => {
+                    const cat = CATEGORY_BY_KEY[k];
+                    return (
+                      <Field
+                        key={cat.key}
+                        cat={cat}
+                        value={draft[cat.key]}
+                        onSelect={(v) => toggle(cat.key, v)}
+                        onText={(v) => set(cat.key, v === "" ? null : v)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
 
       {error && (
         <p className="form__error" role="alert">

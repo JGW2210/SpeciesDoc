@@ -6,7 +6,7 @@ import {
   type HierarchyPointLink,
 } from "d3-hierarchy";
 import { polygonHull, polygonCentroid } from "d3-polygon";
-import { buildTaxonomy, lineageStats, type TaxNode } from "../lib/taxonomy";
+import { buildTaxonomy, type TaxNode } from "../lib/taxonomy";
 import { binomial } from "../lib/format";
 import { CATEGORIES } from "../data/categories";
 import type { Species } from "../types";
@@ -15,9 +15,8 @@ const SIZE = 1000;
 const C = SIZE / 2;
 const RADIUS = 332; // radius of the leaf ring
 const HULL_PAD = 30;
+const COLLAPSE_MIN = 3; // genera with this many isolates auto-collapse into one node
 
-// Soft phylum tints — deliberately low-chroma to echo the grey blobs of the
-// reference figure while staying within the app's palette.
 const PHYLUM_COLORS = [
   "#6a2c91",
   "#c12968",
@@ -42,6 +41,45 @@ function pos(node: HierarchyPointNode<TaxNode>): [number, number] {
   return [node.y * Math.cos(a), node.y * Math.sin(a)];
 }
 
+function gatherIsolates(node: TaxNode): Species[] {
+  if (node.isolate) return [node.isolate];
+  const out: Species[] = [];
+  for (const c of node.children ?? []) out.push(...gatherIsolates(c));
+  return out;
+}
+
+// Stable collapse key per collapsible node (rank-prefixed to avoid clashes).
+function keyOf(node: TaxNode, phylum: string): string | null {
+  if (node.rank === "phylum") return `p:${node.name}`;
+  if (node.rank === "class") return `c:${phylum}/${node.name}`;
+  if (node.rank === "genus") return `g:${phylum}/${node.name}`;
+  return null;
+}
+
+// Genera with many isolates start collapsed; phyla/classes start expanded.
+function defaultCollapsed(node: TaxNode): boolean {
+  return node.rank === "genus" && gatherIsolates(node).length >= COLLAPSE_MIN;
+}
+
+// Apply collapse state: a collapsed node becomes a leaf carrying every isolate
+// beneath it. `overrides` flips a node away from its default state.
+function collapse(node: TaxNode, phylum: string, overrides: Set<string>): TaxNode {
+  const key = keyOf(node, phylum);
+  const isCollapsed = key ? defaultCollapsed(node) !== overrides.has(key) : false;
+  const isolates = node.rank === "isolate" ? undefined : gatherIsolates(node);
+
+  if (key && isCollapsed) {
+    return { ...node, key, isolates, children: undefined };
+  }
+  const nextPhylum = node.rank === "phylum" ? node.name : phylum;
+  return {
+    ...node,
+    key: key ?? node.key,
+    isolates,
+    children: node.children?.map((c) => collapse(c, nextPhylum, overrides)),
+  };
+}
+
 interface TreeViewProps {
   species: Species[];
   enriching: boolean;
@@ -51,21 +89,35 @@ interface TreeViewProps {
 
 export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
   const [selected, setSelected] = useState<Species | null>(null);
+  const [overrides, setOverrides] = useState<Set<string>>(new Set());
 
-  const { leaves, links, hulls } = useMemo(() => {
-    const data = buildTaxonomy(species);
-    const root = cluster<TaxNode>().size([2 * Math.PI, RADIUS]).separation((a, b) =>
-      (a.parent === b.parent ? 1 : 2) / (a.depth || 1),
-    )(hierarchy(data));
+  const toggle = (key: string) =>
+    setOverrides((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const { leaves, links, hulls, handles } = useMemo(() => {
+    const data = collapse(buildTaxonomy(species), "", overrides);
+    const root = cluster<TaxNode>()
+      .size([2 * Math.PI, RADIUS])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(data));
 
     const allLeaves = root.leaves();
     const allLinks = root.links();
 
-    // One hull per phylum (the depth-1 nodes), wrapping its descendant leaves.
-    const phyla = root.children ?? [];
+    // Collapse handle only on expanded genera (phyla/classes collapse via their
+    // hull label / greek tag instead, to avoid overlapping controls near centre).
+    const handleNodes = root
+      .descendants()
+      .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
+
+    // One hull per *expanded* phylum (skip collapsed phyla, which are single nodes).
+    const phyla = (root.children ?? []).filter((p) => !!p.children);
     const hullShapes = phyla.map((p) => {
       const pts = p.leaves().map(pos);
-      // include the phylum's own anchor so single-leaf phyla still get a blob
       pts.push(pos(p));
       const color = colorFor(p.data.name);
       const hull = pts.length >= 3 ? polygonHull(pts as [number, number][]) : null;
@@ -81,21 +133,19 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
           return [x + (dx / len) * HULL_PAD, y + (dy / len) * HULL_PAD] as [number, number];
         });
         path = "M" + padded.map((q) => q.join(",")).join("L") + "Z";
-        // label near the outermost vertex
         labelAt = padded.reduce((far, q) => (Math.hypot(...q) > Math.hypot(...far) ? q : far), padded[0]);
       } else {
-        // 1–2 leaves: draw a circle blob around the centroid
+        // Too few points for a hull — don't draw a stray circle, just label it.
         const cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
         const cy = pts.reduce((s, q) => s + q[1], 0) / pts.length;
-        const r = Math.max(...pts.map((q) => Math.hypot(q[0] - cx, q[1] - cy))) + HULL_PAD;
-        path = `M ${cx - r},${cy} a ${r},${r} 0 1,0 ${r * 2},0 a ${r},${r} 0 1,0 ${-r * 2},0`;
-        labelAt = [cx, cy - r];
+        path = "";
+        labelAt = [cx, cy < 0 ? cy - 14 : cy + 14];
       }
       return { name: p.data.name, color, path, labelAt };
     });
 
-    return { leaves: allLeaves, links: allLinks, hulls: hullShapes };
-  }, [species]);
+    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes };
+  }, [species, overrides]);
 
   if (species.length === 0) {
     return (
@@ -106,7 +156,8 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
     );
   }
 
-  const { missing } = lineageStats(species);
+  const missing = species.filter((s) => !s.lineage || s.lineage.matchType === "NONE").length;
+  const unplaced = species.filter((s) => s.lineage && s.lineage.matchType === "NONE");
 
   return (
     <div className="tree">
@@ -117,37 +168,51 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
             Topology from GBIF lineage · branches are ranks, not evolutionary distance
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn--ghost tree__refresh"
-          onClick={onRefreshLineage}
-          disabled={enriching || missing === 0}
-          title="Look up lineage from GBIF for isolates that don't have it yet"
-        >
-          {enriching ? "Fetching…" : missing > 0 ? `Fetch lineage (${missing})` : "Lineage up to date"}
-        </button>
+        <div className="tree__actions">
+          {overrides.size > 0 && (
+            <button type="button" className="btn btn--ghost" onClick={() => setOverrides(new Set())}>
+              Reset layout
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn--ghost tree__refresh"
+            onClick={onRefreshLineage}
+            disabled={enriching || missing === 0}
+            title="Look up lineage from GBIF for isolates that don't have it yet"
+          >
+            {enriching ? "Fetching…" : missing > 0 ? `Fetch lineage (${missing})` : "Lineage up to date"}
+          </button>
+        </div>
       </div>
 
       <div className="tree__stage">
-        <svg className="tree__svg" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="Taxonomic tree of logged isolates">
+        <svg
+          className="tree__svg"
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          role="img"
+          aria-label="Taxonomic tree of logged isolates"
+        >
           <g transform={`translate(${C},${C})`}>
-            {/* phylum blobs */}
             {hulls.map((h) => (
               <g key={h.name} className="hull">
-                <path d={h.path} fill={h.color} fillOpacity={0.1} stroke={h.color} strokeOpacity={0.28} />
+                {h.path && (
+                  <path d={h.path} fill={h.color} fillOpacity={0.1} stroke={h.color} strokeOpacity={0.28} />
+                )}
                 <text
                   className="hull__label"
                   x={h.labelAt[0]}
                   y={h.labelAt[1]}
                   fill={h.color}
                   textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
+                  onClick={() => toggle(`p:${h.name}`)}
                 >
                   {h.name}
+                  <title>Collapse {h.name}</title>
                 </text>
               </g>
             ))}
 
-            {/* branches */}
             <g className="tree__links" fill="none">
               {links.map((lk: HierarchyPointLink<TaxNode>, i) => {
                 const [sx, sy] = pos(lk.source);
@@ -156,33 +221,102 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
               })}
             </g>
 
-            {/* greek class tags for Proteobacteria */}
             {links
               .map((l) => l.target)
-              .filter((n) => n.data.rank === "class" && n.data.tag)
+              .filter((n) => n.data.rank === "class" && n.data.tag && n.children)
               .map((n) => {
                 const [x, y] = pos(n);
                 return (
-                  <text key={n.data.name} className="tree__greek" x={x} y={y} textAnchor="middle">
+                  <text
+                    key={n.data.name}
+                    className="tree__greek"
+                    x={x}
+                    y={y}
+                    textAnchor="middle"
+                    onClick={() => toggle(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
+                  >
                     {n.data.tag}
+                    <title>Collapse {n.data.name}</title>
                   </text>
                 );
               })}
 
-            {/* isolate tips */}
+            {/* collapse handles on expanded, collapsible nodes */}
+            {handles.map((n) => {
+              const [x, y] = pos(n);
+              return (
+                <g
+                  key={`h-${n.data.key}`}
+                  className="treehandle"
+                  transform={`translate(${x},${y})`}
+                  onClick={() => toggle(n.data.key!)}
+                >
+                  <circle r={6.5}>
+                    <title>Collapse {n.data.name}</title>
+                  </circle>
+                  <line x1={-3} y1={0} x2={3} y2={0} />
+                </g>
+              );
+            })}
+
+            {/* tips: isolates and collapsed nodes */}
             {leaves.map((leaf, i) => {
               const angleDeg = (leaf.x * 180) / Math.PI - 90;
               const flip = leaf.x >= Math.PI;
-              const s = leaf.data.isolate!;
-              const isSel = selected?.id === s.id;
+              const d = leaf.data;
               const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
               const color = phylum ? colorFor(phylum.data.name) : "#5b6573";
+              const floatStyle = {
+                animationDelay: `${(i % 12) * -0.5}s`,
+                animationDuration: `${6 + (i % 5)}s`,
+              };
+
+              // Collapsed node (genus / class / phylum) — a counted blob.
+              if (!leaf.children && d.rank !== "isolate" && d.isolates) {
+                const count = d.isolates.length;
+                const r = 7 + Math.min(count, 16) * 0.95;
+                const fill = d.rank === "phylum" ? colorFor(d.name) : color;
+                return (
+                  <g key={d.key} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
+                    <g className="treenode" style={floatStyle}>
+                      <circle
+                        className="treenode__cluster"
+                        r={r}
+                        fill={fill}
+                        onClick={() => toggle(d.key!)}
+                      >
+                        <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
+                      </circle>
+                      <text className="treenode__count" dy="0.32em" textAnchor="middle">
+                        {count}
+                      </text>
+                      <text
+                        className={`treenode__label treenode__label--cluster${flip ? " is-flip" : ""}`}
+                        transform={flip ? "rotate(180)" : undefined}
+                        x={flip ? -(r + 5) : r + 5}
+                        dy="0.31em"
+                        textAnchor={flip ? "end" : "start"}
+                        onClick={() => toggle(d.key!)}
+                      >
+                        {d.rank === "genus" ? (
+                          <>
+                            <tspan fontStyle="italic">{d.name}</tspan> spp.
+                          </>
+                        ) : (
+                          d.name
+                        )}
+                      </text>
+                    </g>
+                  </g>
+                );
+              }
+
+              // Individual isolate tip.
+              const s = d.isolate!;
+              const isSel = selected?.id === s.id;
               return (
                 <g key={s.id} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
-                  <g
-                    className="treenode"
-                    style={{ animationDelay: `${(i % 12) * -0.5}s`, animationDuration: `${6 + (i % 5)}s` }}
-                  >
+                  <g className="treenode" style={floatStyle}>
                     <circle
                       className={`treenode__dot${isSel ? " is-sel" : ""}`}
                       r={isSel ? 7 : 4.5}
@@ -222,6 +356,23 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
           </aside>
         )}
       </div>
+
+      {unplaced.length > 0 && (
+        <div className="treeunplaced">
+          <div className="treeunplaced__head">Unplaced — no taxonomy match ({unplaced.length})</div>
+          <p className="treeunplaced__hint">
+            GBIF couldn’t place these names. Check the spelling, or they may be too esoteric to match —
+            click one to edit.
+          </p>
+          <div className="treeunplaced__chips">
+            {unplaced.map((s) => (
+              <button key={s.id} className="treeunplaced__chip" onClick={() => onEdit(s)} title="Edit isolate">
+                <em>{binomial(s.genus, s.species)}</em>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

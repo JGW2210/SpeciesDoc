@@ -6,7 +6,9 @@ export interface TaxNode {
   name: string; // display name
   rank: "root" | "phylum" | "class" | "genus" | "isolate";
   tag?: string; // optional short marker (e.g. greek letter for Proteobacteria)
-  isolate?: Species; // present on leaves
+  isolate?: Species; // present on individual leaves
+  isolates?: Species[]; // all isolates under a genus (used for collapsing)
+  key?: string; // stable id for a genus node (phylum/genus)
   children?: TaxNode[];
 }
 

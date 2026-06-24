@@ -1214,8 +1214,6 @@ textarea {
 }
 .tree__stage {
   position: relative;
-  display: flex;
-  justify-content: center;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background:
@@ -1225,8 +1223,8 @@ textarea {
 }
 .tree__svg {
   display: block;
-  /* fill the view: square sized to whichever of width/height is the limit */
-  width: min(100%, calc(100vh - 150px));
+  /* fill the full width; height follows (square), page scrolls if taller */
+  width: 100%;
   height: auto;
 }
 
@@ -1306,6 +1304,17 @@ textarea {
   font-style: normal;
   font-weight: 600;
   fill: var(--ink);
+}
+/* collapsed major section (phylum) keeps a large, coloured hull-style title */
+.treenode__label--major {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4px;
+  stroke-linejoin: round;
 }
 .treenode__dot {
   cursor: pointer;

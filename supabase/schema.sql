@@ -20,6 +20,7 @@ create table if not exists public.species (
   indole            text,
   fermentation      text,
   distinctive_shape text,
+  motility          text,
   haemolysis        text,
   coagulase         text,
   aesculin          text,

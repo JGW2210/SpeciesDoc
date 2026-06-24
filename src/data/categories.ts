@@ -63,6 +63,18 @@ export const CATEGORIES: Category[] = [
     suggestions: ["Cocci", "Bacilli", "Diplococci", "Chains", "Clusters", "Coccobacilli", "Spiral"],
   },
   {
+    key: "motility",
+    label: "Motility",
+    short: "Mot",
+    type: "sign",
+    options: [
+      { value: "Positive", label: "+", title: "Motile" },
+      { value: "Negative", label: "−", title: "Non-motile" },
+      { value: "Variable", label: "v", title: "Variable" },
+    ],
+    hint: "Movement in semisolid motility agar.",
+  },
+  {
     key: "haemolysis",
     label: "Haemolysis",
     short: "Haem",

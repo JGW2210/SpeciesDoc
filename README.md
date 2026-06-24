@@ -11,9 +11,9 @@ Built with **Vite + React + TypeScript** and **Supabase** for storage.
 
 - Log an isolate by **genus + species**, shown in correct binomial form.
 - Full identification panel: Gram, Oxidase, Catalase, Indole, Fermentation,
-  Distinctive shape, Haemolysis, Coagulase, Aesculin, PYR / PYZ, Spores, DNase,
-  Tributyrin, Hugh & Leifson O/F, Atmosphere, Methyl red, Voges-Proskauer,
-  Citrate, and free-text Other notes.
+  Distinctive shape, Motility, Haemolysis, Coagulase, Aesculin, PYR / PYZ,
+  Spores, DNase, Tributyrin, Hugh & Leifson O/F, Atmosphere, Methyl red,
+  Voges-Proskauer, Citrate, and free-text Other notes.
 - Quick `+ / − / variable` toggles for biochemical tests, α/β/γ for haemolysis,
   and suggestion chips for the descriptive fields.
 - Main view groups saved isolates into **Gram-positive / Gram-negative /

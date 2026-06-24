@@ -13,6 +13,7 @@ const EMPTY: SpeciesDraft = {
   indole: null,
   fermentation: null,
   distinctive_shape: null,
+  motility: null,
   haemolysis: null,
   coagulase: null,
   aesculin: null,

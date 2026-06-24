@@ -10,6 +10,7 @@ export interface Species {
   indole: string | null;
   fermentation: string | null;
   distinctive_shape: string | null;
+  motility: string | null;
   haemolysis: string | null;
   coagulase: string | null;
   aesculin: string | null;

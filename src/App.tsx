@@ -107,6 +107,7 @@ export default function App() {
   }, [species, enrichOne]);
 
   const handleEdit = useCallback((s: Species) => {
+    setView("list"); // the form lives in List view
     setEditing(s);
     setFormOpen(true);
   }, []);
@@ -164,15 +165,17 @@ export default function App() {
         </button>
       </div>
 
-      <main className="layout">
-        <section className={`layout__form${formOpen ? " is-open" : ""}`}>
-          <SpeciesForm
-            onSubmit={handleSubmit}
-            editing={editing}
-            onCancelEdit={closeForm}
-            disabled={!isSupabaseConfigured}
-          />
-        </section>
+      <main className={`layout${view === "tree" ? " layout--tree" : ""}`}>
+        {view === "list" && (
+          <section className={`layout__form${formOpen ? " is-open" : ""}`}>
+            <SpeciesForm
+              onSubmit={handleSubmit}
+              editing={editing}
+              onCancelEdit={closeForm}
+              disabled={!isSupabaseConfigured}
+            />
+          </section>
+        )}
         <section className="layout__list">
           {view === "list" ? (
             <SpeciesList
@@ -193,24 +196,28 @@ export default function App() {
         </section>
       </main>
 
-      {/* Mobile-only: dim the list behind the open sheet. */}
-      <div
-        className={`backdrop${formOpen ? " is-shown" : ""}`}
-        onClick={closeForm}
-        aria-hidden="true"
-      />
+      {/* Mobile-only: dim the list behind the open sheet (List view only). */}
+      {view === "list" && (
+        <div
+          className={`backdrop${formOpen ? " is-shown" : ""}`}
+          onClick={closeForm}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Mobile-only: bottom bar to toggle the entry form. */}
-      <div className="mobilebar">
-        <button
-          type="button"
-          className="mobilebar__btn"
-          aria-expanded={formOpen}
-          onClick={() => (formOpen ? closeForm() : setFormOpen(true))}
-        >
-          {formOpen ? "Close" : editing ? "Edit isolate" : "＋  Log an isolate"}
-        </button>
-      </div>
+      {/* Mobile-only: bottom bar to toggle the entry form (List view only). */}
+      {view === "list" && (
+        <div className="mobilebar">
+          <button
+            type="button"
+            className="mobilebar__btn"
+            aria-expanded={formOpen}
+            onClick={() => (formOpen ? closeForm() : setFormOpen(true))}
+          >
+            {formOpen ? "Close" : editing ? "Edit isolate" : "＋  Log an isolate"}
+          </button>
+        </div>
+      )}
 
       <footer className="foot">
         <span>SpeciesDoc</span>

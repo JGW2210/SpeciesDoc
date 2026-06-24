@@ -204,6 +204,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+/* Tree view takes the full width — the entry form is hidden. */
+.layout--tree {
+  grid-template-columns: 1fr;
+}
 
 /* ------------------------------------------------------------------ form --- */
 .layout__form {
@@ -1203,8 +1207,15 @@ textarea {
   flex: none;
 }
 
+.tree__actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
 .tree__stage {
   position: relative;
+  display: flex;
+  justify-content: center;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background:
@@ -1214,18 +1225,24 @@ textarea {
 }
 .tree__svg {
   display: block;
-  width: 100%;
+  /* fill the view: square sized to whichever of width/height is the limit */
+  width: min(100%, calc(100vh - 150px));
   height: auto;
 }
 
 .hull__label {
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
   paint-order: stroke;
   stroke: #ffffff;
-  stroke-width: 3px;
+  stroke-width: 4px;
   stroke-linejoin: round;
+}
+.hull__label:hover {
+  text-decoration: underline;
 }
 .tree__link {
   stroke: var(--border-strong);
@@ -1233,17 +1250,62 @@ textarea {
 }
 .tree__greek {
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 22px;
   font-weight: 700;
-  fill: var(--ink-soft);
+  fill: var(--ink);
+  cursor: pointer;
   paint-order: stroke;
   stroke: #fff;
-  stroke-width: 3px;
+  stroke-width: 4px;
+}
+
+/* collapse handle (the "−" on an expanded, collapsible node) */
+.treehandle {
+  cursor: pointer;
+}
+.treehandle circle {
+  fill: #fff;
+  stroke: var(--ink-soft);
+  stroke-width: 1.5px;
+  transition: stroke 0.12s;
+}
+.treehandle line {
+  stroke: var(--ink-soft);
+  stroke-width: 1.8px;
+  pointer-events: none;
+}
+.treehandle:hover circle {
+  stroke: var(--accent);
+}
+.treehandle:hover line {
+  stroke: var(--accent);
 }
 
 .treenode {
   animation: floaty 6s ease-in-out infinite;
   transform-box: fill-box;
+}
+/* collapsed genus/section blob */
+.treenode__cluster {
+  cursor: pointer;
+  stroke: #fff;
+  stroke-width: 2px;
+  transition: filter 0.12s;
+}
+.treenode__cluster:hover {
+  filter: brightness(1.08);
+}
+.treenode__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  fill: #fff;
+  pointer-events: none;
+}
+.treenode__label--cluster {
+  font-style: normal;
+  font-weight: 600;
+  fill: var(--ink);
 }
 .treenode__dot {
   cursor: pointer;
@@ -1335,6 +1397,50 @@ textarea {
 }
 .treedetail__edit {
   width: 100%;
+}
+
+/* unplaced (no GBIF match) reference list */
+.treeunplaced {
+  margin-top: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.treeunplaced__head {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.treeunplaced__hint {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.treeunplaced__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.treeunplaced__chip {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.treeunplaced__chip em {
+  font-style: italic;
+}
+.treeunplaced__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: var(--accent-soft);
 }
 
 @keyframes rise {

@@ -289,9 +289,12 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
                       >
                         <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
                       </circle>
-                      <text className="treenode__count" dy="0.32em" textAnchor="middle">
-                        {count}
-                      </text>
+                      {/* counter-rotate so the count always reads upright */}
+                      <g transform={`rotate(${-angleDeg})`}>
+                        <text className="treenode__count" dy="0.32em" textAnchor="middle">
+                          {count}
+                        </text>
+                      </g>
                       <text
                         className={`treenode__label treenode__label--cluster${major ? " treenode__label--major" : ""}`}
                         style={major ? { fill } : undefined}

@@ -407,7 +407,13 @@ textarea {
   border: none;
   border-top: 1px dashed var(--border-strong);
   margin: 0;
-  padding: 16px 0 0;
+  padding: 14px 0 0;
+}
+.form__panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 .form__panel-legend {
   font-size: 0.72rem;
@@ -416,6 +422,67 @@ textarea {
   color: var(--muted);
   font-weight: 600;
   padding: 0;
+}
+.form__panel-toggle {
+  border: none;
+  background: none;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  padding: 2px 4px;
+}
+.form__panel-toggle:hover {
+  text-decoration: underline;
+}
+
+/* collapsible test subsections */
+.fgroup {
+  border-top: 1px solid var(--border);
+}
+.fgroup:first-of-type {
+  border-top: none;
+}
+.fgroup__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  padding: 11px 2px;
+  text-align: left;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.fgroup__head:hover {
+  color: var(--accent-deep);
+}
+.fgroup__chev {
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.fgroup.is-open .fgroup__chev {
+  transform: rotate(90deg);
+}
+.fgroup__name {
+  flex: 1;
+}
+.fgroup__badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  min-width: 20px;
+  text-align: center;
+  padding: 1px 7px;
+}
+.fgroup .form__grid {
+  margin-top: 0;
+  padding: 2px 0 14px;
 }
 .form__grid {
   display: grid;

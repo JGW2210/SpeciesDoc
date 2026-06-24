@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
+import { fetchLineage } from "./lib/gbif";
 import type { Species, SpeciesDraft } from "./types";
 import Header from "./components/Header";
 import SetupBanner from "./components/SetupBanner";
 import SpeciesForm from "./components/SpeciesForm";
 import SpeciesList from "./components/SpeciesList";
+import TreeView from "./components/TreeView";
+
+type View = "list" | "tree";
 
 export default function App() {
   const [species, setSpecies] = useState<Species[]>([]);
@@ -14,6 +18,8 @@ export default function App() {
   // Controls the slide-up form sheet on mobile. Ignored on desktop, where the
   // form is always visible in the left column.
   const [formOpen, setFormOpen] = useState(false);
+  const [view, setView] = useState<View>("list");
+  const [enriching, setEnriching] = useState(false);
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -38,29 +44,67 @@ export default function App() {
     void load();
   }, [load]);
 
-  // Insert a new isolate or update the one being edited.
-  const handleSubmit = useCallback(async (draft: SpeciesDraft, editingId: string | null) => {
-    if (!supabase) throw new Error("Supabase is not configured.");
-
-    if (editingId) {
-      const { data, error } = await supabase
-        .from("species")
-        .update(draft)
-        .eq("id", editingId)
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      setSpecies((prev) => prev.map((s) => (s.id === editingId ? (data as Species) : s)));
-      setEditing(null);
-      setFormOpen(false);
-      return;
+  // Best-effort: fetch GBIF lineage for one isolate and cache it on the row.
+  // Silently no-ops if the lineage column is missing or the lookup fails, so it
+  // never blocks the core save.
+  const enrichOne = useCallback(async (s: Species) => {
+    if (!supabase) return;
+    const lineage = await fetchLineage(s.genus, s.species);
+    if (!lineage) return;
+    const { data, error } = await supabase
+      .from("species")
+      .update({ lineage })
+      .eq("id", s.id)
+      .select()
+      .single();
+    if (!error && data) {
+      setSpecies((prev) => prev.map((x) => (x.id === s.id ? (data as Species) : x)));
     }
-
-    const { data, error } = await supabase.from("species").insert(draft).select().single();
-    if (error) throw new Error(error.message);
-    setSpecies((prev) => [data as Species, ...prev]);
-    setFormOpen(false);
   }, []);
+
+  // Insert a new isolate or update the one being edited.
+  const handleSubmit = useCallback(
+    async (draft: SpeciesDraft, editingId: string | null) => {
+      if (!supabase) throw new Error("Supabase is not configured.");
+
+      if (editingId) {
+        const { data, error } = await supabase
+          .from("species")
+          .update(draft)
+          .eq("id", editingId)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        const saved = data as Species;
+        setSpecies((prev) => prev.map((s) => (s.id === editingId ? saved : s)));
+        setEditing(null);
+        setFormOpen(false);
+        void enrichOne(saved); // refresh lineage in case the name changed
+        return;
+      }
+
+      const { data, error } = await supabase.from("species").insert(draft).select().single();
+      if (error) throw new Error(error.message);
+      const saved = data as Species;
+      setSpecies((prev) => [saved, ...prev]);
+      setFormOpen(false);
+      void enrichOne(saved);
+    },
+    [enrichOne],
+  );
+
+  // Backfill lineage for every isolate that doesn't have a match yet.
+  const refreshLineage = useCallback(async () => {
+    setEnriching(true);
+    try {
+      const targets = species.filter((s) => !s.lineage || s.lineage.matchType === "NONE");
+      for (const s of targets) {
+        await enrichOne(s);
+      }
+    } finally {
+      setEnriching(false);
+    }
+  }, [species, enrichOne]);
 
   const handleEdit = useCallback((s: Species) => {
     setEditing(s);
@@ -99,6 +143,27 @@ export default function App() {
         </p>
       )}
 
+      <div className="viewbar" role="tablist" aria-label="View">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "list"}
+          className={`viewbar__btn${view === "list" ? " is-on" : ""}`}
+          onClick={() => setView("list")}
+        >
+          List
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "tree"}
+          className={`viewbar__btn${view === "tree" ? " is-on" : ""}`}
+          onClick={() => setView("tree")}
+        >
+          Tree
+        </button>
+      </div>
+
       <main className="layout">
         <section className={`layout__form${formOpen ? " is-open" : ""}`}>
           <SpeciesForm
@@ -109,13 +174,22 @@ export default function App() {
           />
         </section>
         <section className="layout__list">
-          <SpeciesList
-            species={species}
-            loading={loading}
-            editingId={editing?.id ?? null}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
+          {view === "list" ? (
+            <SpeciesList
+              species={species}
+              loading={loading}
+              editingId={editing?.id ?? null}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          ) : (
+            <TreeView
+              species={species}
+              enriching={enriching}
+              onRefreshLineage={refreshLineage}
+              onEdit={handleEdit}
+            />
+          )}
         </section>
       </main>
 

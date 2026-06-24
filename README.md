@@ -18,7 +18,12 @@ Built with **Vite + React + TypeScript** and **Supabase** for storage.
   and suggestion chips for the descriptive fields.
 - Main view groups saved isolates into **Gram-positive / Gram-negative /
   variable & untyped** bands, with a per-isolate test readout and expandable
-  notes. Filter by name.
+  notes. Filter by name, ID characteristics, and date added.
+- **Tree view** (toggle next to List): a floating radial **taxonomic tree** of
+  your isolates with shaded phylum hulls (α/β/γ/ε for Proteobacteria) and
+  clickable tips. Lineage is fetched from the free **GBIF** backbone taxonomy on
+  save and cached; a "Fetch lineage" button backfills existing rows. Branches
+  encode taxonomic rank, not evolutionary distance.
 
 ## Setup
 

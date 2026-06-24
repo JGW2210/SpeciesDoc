@@ -276,6 +276,8 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
                 const count = d.isolates.length;
                 const r = 7 + Math.min(count, 16) * 0.95;
                 const fill = d.rank === "phylum" ? colorFor(d.name) : color;
+                // Major sections keep the large, coloured hull-style title.
+                const major = d.rank === "phylum";
                 return (
                   <g key={d.key} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
                     <g className="treenode" style={floatStyle}>
@@ -291,9 +293,10 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
                         {count}
                       </text>
                       <text
-                        className={`treenode__label treenode__label--cluster${flip ? " is-flip" : ""}`}
+                        className={`treenode__label treenode__label--cluster${major ? " treenode__label--major" : ""}`}
+                        style={major ? { fill } : undefined}
                         transform={flip ? "rotate(180)" : undefined}
-                        x={flip ? -(r + 5) : r + 5}
+                        x={flip ? -(r + 7) : r + 7}
                         dy="0.31em"
                         textAnchor={flip ? "end" : "start"}
                         onClick={() => toggle(d.key!)}

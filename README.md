@@ -70,6 +70,19 @@ for a personal bench log. If you deploy this somewhere public or want
 per-user data, add [Supabase Auth](https://supabase.com/docs/guides/auth) and
 replace the policy in `supabase/schema.sql` with one scoped to `auth.uid()`.
 
+## Deploying to GitHub Pages
+
+The repo includes a workflow (`.github/workflows/deploy.yml`) that builds the app
+and publishes it on every push to `main`. Vite is configured to serve from the
+`/SpeciesDoc/` subpath in production, so the site lives at
+**https://jgw2210.github.io/SpeciesDoc**.
+
+One-time setup: in the GitHub repo, go to **Settings → Pages** and set
+**Source** to **GitHub Actions**. After the next push to `main` (or a manual run
+of the "Deploy to GitHub Pages" workflow), the site goes live. The deployed app
+uses the committed Supabase values in `src/config.ts`, so no extra secrets are
+needed.
+
 ## Project layout
 
 ```

@@ -5,14 +5,16 @@ import type { TestKey } from "../types";
 //   gram       — Gram stain reaction, drives the whole grouping
 //   haemolysis — alpha / beta / gamma blood-agar reaction
 //   of         — Hugh & Leifson oxidation/fermentation
+//   choice     — single pick from many grouped options (e.g. motility type)
 //   text       — short free text (with optional quick-pick suggestions)
 //   textarea   — longer free text
-export type FieldType = "sign" | "gram" | "haemolysis" | "of" | "text" | "textarea";
+export type FieldType = "sign" | "gram" | "haemolysis" | "of" | "choice" | "text" | "textarea";
 
 export interface QuickOption {
   value: string; // value stored in the database
   label: string; // glyph / short label shown on the chip
   title?: string; // full name for tooltips + screen readers
+  group?: string; // optional subsection heading (used by "choice" fields)
 }
 
 export interface Category {
@@ -66,13 +68,28 @@ export const CATEGORIES: Category[] = [
     key: "motility",
     label: "Motility",
     short: "Mot",
-    type: "sign",
+    type: "choice",
+    hint: "Mechanism or pattern of movement.",
     options: [
-      { value: "Positive", label: "+", title: "Motile" },
-      { value: "Negative", label: "−", title: "Non-motile" },
-      { value: "Variable", label: "v", title: "Variable" },
+      // Appendage-dependent
+      { value: "Swimming", label: "Swimming", group: "Appendage-dependent", title: "Flagellar swimming in liquid (e.g. E. coli, Vibrio cholerae)" },
+      { value: "Swarming", label: "Swarming", group: "Appendage-dependent", title: "Coordinated flagellar movement over surfaces (e.g. Proteus)" },
+      { value: "Twitching", label: "Twitching", group: "Appendage-dependent", title: "Type IV pili extension/retraction over solid surfaces" },
+      // Appendage-independent
+      { value: "Gliding", label: "Gliding", group: "Appendage-independent", title: "Smooth surface movement without flagella or pili (e.g. Myxococcus, Mycoplasma)" },
+      { value: "Sliding", label: "Sliding", group: "Appendage-independent", title: "Passive spread via surfactants / colony expansion" },
+      // Specific patterns
+      { value: "Corkscrew", label: "Corkscrew", group: "Pattern", title: "Spirochaete axial-filament motility (e.g. Treponema)" },
+      { value: "Tumbling", label: "Tumbling", group: "Pattern", title: "Tumbling motility (e.g. Listeria)" },
+      { value: "Darting", label: "Darting", group: "Pattern", title: "Darting motility (e.g. Vibrio)" },
+      // Temperature-dependent (variable)
+      { value: "Motile at 25 °C", label: "Motile @ 25 °C", group: "Variable — temperature-dependent", title: "Motile at ~25 °C, non-motile at 37 °C (e.g. Listeria, Yersinia)" },
+      { value: "Motile at 30 °C", label: "Motile @ 30 °C", group: "Variable — temperature-dependent", title: "Motile at ~30 °C" },
+      { value: "Temperature-variable", label: "Temp-variable", group: "Variable — temperature-dependent", title: "Motility varies with incubation temperature" },
+      // Result
+      { value: "Non-motile", label: "Non-motile", group: "Result", title: "No motility observed" },
+      { value: "Motile (type n/d)", label: "Motile · type n/d", group: "Result", title: "Motile, mechanism not determined" },
     ],
-    hint: "Movement in semisolid motility agar.",
   },
   {
     key: "haemolysis",

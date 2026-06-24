@@ -466,6 +466,44 @@ textarea {
   background: var(--safranin);
 } /* negative */
 
+/* grouped single-choice control (e.g. motility type) */
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.choicegrp__label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.choicegrp__opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.choice {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.choice:hover {
+  border-color: var(--accent);
+}
+.choice.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .tfield__input,
 .tfield__textarea {
   width: 100%;
@@ -679,6 +717,9 @@ textarea {
 }
 .fitem {
   min-width: 0;
+}
+.fitem--wide {
+  grid-column: 1 / -1;
 }
 /* section heading inside the filter panel */
 .fitem__label {

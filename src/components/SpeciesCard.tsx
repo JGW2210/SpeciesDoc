@@ -6,13 +6,21 @@ import { binomial, polarityOf } from "../lib/format";
 interface SpeciesCardProps {
   species: Species;
   index: number;
+  isEditing: boolean;
+  onEdit: (s: Species) => void;
   onDelete: (id: string) => void;
 }
 
 // Tests shown as compact readout chips (everything except the free-text note block).
 const CHIP_KEYS = CATEGORIES.filter((c) => c.key !== "other_notes");
 
-export default function SpeciesCard({ species, index, onDelete }: SpeciesCardProps) {
+export default function SpeciesCard({
+  species,
+  index,
+  isEditing,
+  onEdit,
+  onDelete,
+}: SpeciesCardProps) {
   const [confirming, setConfirming] = useState(false);
 
   const results = CHIP_KEYS.map((cat) => ({ cat, value: species[cat.key] }))
@@ -26,7 +34,10 @@ export default function SpeciesCard({ species, index, onDelete }: SpeciesCardPro
   });
 
   return (
-    <article className="card" style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}>
+    <article
+      className={`card${isEditing ? " card--editing" : ""}`}
+      style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
+    >
       <div className="card__top">
         <h3 className="card__name">
           <em>{binomial(species.genus, species.species)}</em>
@@ -43,14 +54,24 @@ export default function SpeciesCard({ species, index, onDelete }: SpeciesCardPro
               </button>
             </span>
           ) : (
-            <button
-              className="card__del"
-              aria-label={`Delete ${binomial(species.genus, species.species)}`}
-              title="Delete"
-              onClick={() => setConfirming(true)}
-            >
-              ×
-            </button>
+            <>
+              <button
+                className="card__action"
+                aria-label={`Edit ${binomial(species.genus, species.species)}`}
+                title="Edit"
+                onClick={() => onEdit(species)}
+              >
+                Edit
+              </button>
+              <button
+                className="card__del"
+                aria-label={`Delete ${binomial(species.genus, species.species)}`}
+                title="Delete"
+                onClick={() => setConfirming(true)}
+              >
+                ×
+              </button>
+            </>
           )}
         </div>
       </div>

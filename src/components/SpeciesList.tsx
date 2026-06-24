@@ -6,10 +6,18 @@ import SpeciesCard from "./SpeciesCard";
 interface SpeciesListProps {
   species: Species[];
   loading: boolean;
+  editingId: string | null;
+  onEdit: (s: Species) => void;
   onDelete: (id: string) => void;
 }
 
-export default function SpeciesList({ species, loading, onDelete }: SpeciesListProps) {
+export default function SpeciesList({
+  species,
+  loading,
+  editingId,
+  onEdit,
+  onDelete,
+}: SpeciesListProps) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -65,7 +73,16 @@ export default function SpeciesList({ species, loading, onDelete }: SpeciesListP
             </div>
             <div className="band__grid">
               {items.map((s) => {
-                const card = <SpeciesCard key={s.id} species={s} index={visible} onDelete={onDelete} />;
+                const card = (
+                  <SpeciesCard
+                    key={s.id}
+                    species={s}
+                    index={visible}
+                    isEditing={s.id === editingId}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                );
                 visible += 1;
                 return card;
               })}

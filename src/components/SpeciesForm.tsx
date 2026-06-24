@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATEGORIES } from "../data/categories";
 import type { Category } from "../data/categories";
-import type { SpeciesDraft, TestKey } from "../types";
+import type { Species, SpeciesDraft, TestKey } from "../types";
 import { binomial } from "../lib/format";
 
 const EMPTY: SpeciesDraft = {
@@ -28,15 +28,31 @@ const EMPTY: SpeciesDraft = {
   other_notes: null,
 };
 
+// Strip the server-managed fields so an existing row can seed the form.
+function toDraft(s: Species): SpeciesDraft {
+  const { id: _id, created_at: _created, ...rest } = s;
+  return rest;
+}
+
 interface SpeciesFormProps {
-  onSubmit: (draft: SpeciesDraft) => Promise<void>;
+  onSubmit: (draft: SpeciesDraft, editingId: string | null) => Promise<void>;
+  editing: Species | null;
+  onCancelEdit: () => void;
   disabled?: boolean;
 }
 
-export default function SpeciesForm({ onSubmit, disabled }: SpeciesFormProps) {
+export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled }: SpeciesFormProps) {
   const [draft, setDraft] = useState<SpeciesDraft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load the selected row into the form when entering edit mode; clear on exit.
+  useEffect(() => {
+    setDraft(editing ? toDraft(editing) : EMPTY);
+    setError(null);
+  }, [editing]);
+
+  const isEditing = !!editing;
 
   const set = (key: keyof SpeciesDraft, value: string | null) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -53,10 +69,15 @@ export default function SpeciesForm({ onSubmit, disabled }: SpeciesFormProps) {
     setSaving(true);
     setError(null);
     try {
-      await onSubmit({ ...draft, genus: draft.genus.trim(), species: draft.species.trim() });
-      setDraft(EMPTY);
+      await onSubmit(
+        { ...draft, genus: draft.genus.trim(), species: draft.species.trim() },
+        editing?.id ?? null,
+      );
+      if (!isEditing) setDraft(EMPTY); // keep edits visible until parent clears editing
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save. Check the connection and try again.");
+      setError(
+        err instanceof Error ? err.message : "Could not save. Check the connection and try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -67,11 +88,17 @@ export default function SpeciesForm({ onSubmit, disabled }: SpeciesFormProps) {
   return (
     <form className="form" onSubmit={handleSubmit}>
       <div className="form__head">
-        <h2 className="form__title">Log an isolate</h2>
+        <h2 className="form__title">{isEditing ? "Edit isolate" : "Log an isolate"}</h2>
         <p className="form__preview" aria-live="polite">
           {preview ? <em>{preview}</em> : <span className="form__preview--empty">Genus species</span>}
         </p>
       </div>
+
+      {isEditing && (
+        <p className="form__editing">
+          Editing <em>{binomial(editing.genus, editing.species)}</em> — change anything and update.
+        </p>
+      )}
 
       <div className="form__name">
         <label className="field">
@@ -123,16 +150,28 @@ export default function SpeciesForm({ onSubmit, disabled }: SpeciesFormProps) {
 
       <div className="form__actions">
         <button type="submit" className="btn btn--primary" disabled={!canSave}>
-          {saving ? "Saving…" : "Save isolate"}
+          {saving
+            ? isEditing
+              ? "Updating…"
+              : "Saving…"
+            : isEditing
+              ? "Update isolate"
+              : "Save isolate"}
         </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setDraft(EMPTY)}
-          disabled={saving}
-        >
-          Clear
-        </button>
+        {isEditing ? (
+          <button type="button" className="btn btn--ghost" onClick={onCancelEdit} disabled={saving}>
+            Cancel
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setDraft(EMPTY)}
+            disabled={saving}
+          >
+            Clear
+          </button>
+        )}
       </div>
     </form>
   );

@@ -79,7 +79,14 @@ export default function SpeciesCard({
       {results.length > 0 ? (
         <ul className="readout">
           {results.map(({ cat, value }) => {
-            const pol = cat.type === "text" ? "neutral" : polarityOf(value);
+            // Only the inherently polar tests get +/- colouring; descriptive
+            // ones (text, motility choice) stay neutral.
+            const polar =
+              cat.type === "sign" ||
+              cat.type === "gram" ||
+              cat.type === "haemolysis" ||
+              cat.type === "of";
+            const pol = polar ? polarityOf(value) : "neutral";
             return (
               <li key={cat.key as TestKey} className={`rchip rchip--${pol}`} title={`${cat.label}: ${value}`}>
                 <span className="rchip__k">{cat.short}</span>

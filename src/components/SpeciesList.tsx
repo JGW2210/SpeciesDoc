@@ -218,24 +218,29 @@ export default function SpeciesList({
           <div className="filterpanel__section">
             <div className="fitem__label">ID characteristics</div>
             <div className="filterpanel__grid">
-              {FILTERABLE.map((cat) => (
-                <div key={cat.key} className="fitem">
-                  <div className="fitem__sublabel">{cat.label}</div>
-                  <div className="fitem__opts">
-                    {cat.options!.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        className={`fopt${filters[cat.key] === opt.value ? " is-on" : ""}`}
-                        title={opt.title ?? opt.value}
-                        onClick={() => toggleFilter(cat.key, opt.value)}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+              {FILTERABLE.map((cat) => {
+                const wide = cat.options!.length > 4;
+                return (
+                  <div key={cat.key} className={`fitem${wide ? " fitem--wide" : ""}`}>
+                    <div className="fitem__sublabel">{cat.label}</div>
+                    <div className="fitem__opts">
+                      {cat.options!.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`fopt${filters[cat.key] === opt.value ? " is-on" : ""}`}
+                          title={
+                            opt.group ? `${opt.group} — ${opt.title ?? opt.value}` : opt.title ?? opt.value
+                          }
+                          onClick={() => toggleFilter(cat.key, opt.value)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

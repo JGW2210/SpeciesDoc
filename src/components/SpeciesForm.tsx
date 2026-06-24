@@ -1,8 +1,24 @@
 import { useEffect, useState } from "react";
 import { CATEGORIES } from "../data/categories";
-import type { Category } from "../data/categories";
+import type { Category, QuickOption } from "../data/categories";
 import type { Species, SpeciesDraft, TestKey } from "../types";
 import { binomial } from "../lib/format";
+
+// Bucket options by their `group`, preserving first-seen order of both groups
+// and options. Options without a group fall under "".
+function groupOptions(options: QuickOption[]): [string, QuickOption[]][] {
+  const order: string[] = [];
+  const map = new Map<string, QuickOption[]>();
+  for (const opt of options) {
+    const g = opt.group ?? "";
+    if (!map.has(g)) {
+      map.set(g, []);
+      order.push(g);
+    }
+    map.get(g)!.push(opt);
+  }
+  return order.map((g) => [g, map.get(g)!]);
+}
 
 const EMPTY: SpeciesDraft = {
   genus: "",
@@ -187,13 +203,15 @@ interface FieldProps {
 
 function Field({ cat, value, onSelect, onText }: FieldProps) {
   const isText = cat.type === "text" || cat.type === "textarea";
-  const wide = cat.type === "textarea";
+  const isChoice = cat.type === "choice";
+  const isSeg = !isText && !isChoice && !!cat.options;
+  const wide = cat.type === "textarea" || isChoice;
 
   return (
     <div className={`tfield${wide ? " tfield--wide" : ""}`}>
       <div className="tfield__label">{cat.label}</div>
 
-      {!isText && cat.options && (
+      {isSeg && cat.options && (
         <div className="seg" role="group" aria-label={cat.label}>
           {cat.options.map((opt) => (
             <button
@@ -206,6 +224,30 @@ function Field({ cat, value, onSelect, onText }: FieldProps) {
             >
               {opt.label}
             </button>
+          ))}
+        </div>
+      )}
+
+      {isChoice && cat.options && (
+        <div className="choices" role="group" aria-label={cat.label}>
+          {groupOptions(cat.options).map(([groupName, opts]) => (
+            <div key={groupName} className="choicegrp">
+              {groupName && <div className="choicegrp__label">{groupName}</div>}
+              <div className="choicegrp__opts">
+                {opts.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`choice${value === opt.value ? " is-on" : ""}`}
+                    aria-pressed={value === opt.value}
+                    title={opt.title ?? opt.value}
+                    onClick={() => onSelect(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -1917,3 +1917,11 @@ textarea {
 .cdot__swatch:hover {
   transform: scale(1.12);
 }
+
+/* category-level (no subcategory) drop zone */
+.ccat__direct {
+  padding: 10px 12px 12px;
+}
+.ccat__direct + .ccat__subs {
+  border-top: 1px solid var(--border);
+}

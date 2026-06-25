@@ -6,6 +6,7 @@ import {
   PRESET_COLORS,
   newCat,
   newSub,
+  normalizeBoard,
   type Board,
   type BoardCat,
   type BoardSub,
@@ -14,9 +15,10 @@ import type { Species } from "../types";
 
 const BOARD_ID = "main";
 
+// subId null = held directly on the category (no subcategory).
 interface DragData {
   isoId: string;
-  from: { catId: string; subId: string } | null;
+  from: { catId: string; subId: string | null } | null;
 }
 
 interface CustomViewProps {
@@ -41,7 +43,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
         return;
       }
       const { data } = await supabase.from("board").select("data").eq("id", BOARD_ID).maybeSingle();
-      if (active && data?.data) setBoard(data.data as Board);
+      if (active && data?.data) setBoard(normalizeBoard(data.data as Board));
       loaded.current = true;
     })();
     return () => {
@@ -79,15 +81,23 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const removeSub = (catId: string, subId: string) =>
     mutateCat(catId, (c) => ({ ...c, subs: c.subs.filter((s) => s.id !== subId) }));
 
-  const addIsolate = (catId: string, subId: string, isoId: string) =>
-    mutateSub(catId, subId, (s) =>
-      s.isolateIds.includes(isoId) ? s : { ...s, isolateIds: [...s.isolateIds, isoId] },
-    );
+  // subId null targets the category's own isolate list.
+  const addIsolate = (catId: string, subId: string | null, isoId: string) => {
+    const add = (ids: string[]) => (ids.includes(isoId) ? ids : [...ids, isoId]);
+    if (subId === null) mutateCat(catId, (c) => ({ ...c, isolateIds: add(c.isolateIds) }));
+    else mutateSub(catId, subId, (s) => ({ ...s, isolateIds: add(s.isolateIds) }));
+  };
 
-  const removeIsolate = (catId: string, subId: string, isoId: string) =>
-    mutateSub(catId, subId, (s) => ({ ...s, isolateIds: s.isolateIds.filter((i) => i !== isoId) }));
+  const removeIsolate = (catId: string, subId: string | null, isoId: string) => {
+    const rm = (ids: string[]) => ids.filter((i) => i !== isoId);
+    if (subId === null) mutateCat(catId, (c) => ({ ...c, isolateIds: rm(c.isolateIds) }));
+    else mutateSub(catId, subId, (s) => ({ ...s, isolateIds: rm(s.isolateIds) }));
+  };
 
-  const handleDrop = (catId: string, subId: string) => (e: React.DragEvent) => {
+  const sameTarget = (a: { catId: string; subId: string | null }, catId: string, subId: string | null) =>
+    a.catId === catId && a.subId === subId;
+
+  const handleDrop = (catId: string, subId: string | null) => (e: React.DragEvent) => {
     e.preventDefault();
     setOverSub(null);
     let payload: DragData;
@@ -97,10 +107,43 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
       return;
     }
     if (!payload?.isoId) return;
-    if (payload.from && payload.from.subId !== subId) {
+    if (payload.from && !sameTarget(payload.from, catId, subId)) {
       removeIsolate(payload.from.catId, payload.from.subId, payload.isoId);
     }
     addIsolate(catId, subId, payload.isoId);
+  };
+
+  // A drop zone shared by category-level and subcategory-level isolate lists.
+  const dropKey = (catId: string, subId: string | null) => subId ?? `cat:${catId}`;
+  const renderDrop = (catId: string, subId: string | null, ids: string[], color: string) => {
+    const key = dropKey(catId, subId);
+    return (
+      <div
+        className={`csub__drop${overSub === key ? " is-over" : ""}`}
+        style={{ ["--sub" as string]: color }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (overSub !== key) setOverSub(key);
+        }}
+        onDragLeave={() => setOverSub((cur) => (cur === key ? null : cur))}
+        onDrop={handleDrop(catId, subId)}
+      >
+        {ids.length === 0 && <span className="cboard__empty">Drag isolates here</span>}
+        {ids.map((id) => {
+          const s = byId.get(id);
+          if (!s) return null;
+          return (
+            <Chip
+              key={id}
+              s={s}
+              from={{ catId, subId }}
+              onOpen={() => onEdit(s)}
+              onRemove={() => removeIsolate(catId, subId, id)}
+            />
+          );
+        })}
+      </div>
+    );
   };
 
   const pool = useMemo(() => {
@@ -155,7 +198,11 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
       ) : (
         <div className="cboard__cats">
           {board.categories.map((cat) => {
-            const total = cat.subs.reduce((n, s) => n + s.isolateIds.length, 0);
+            const total =
+              cat.isolateIds.length + cat.subs.reduce((n, s) => n + s.isolateIds.length, 0);
+            // Show the category's own drop zone when it has no subs, or when it
+            // already holds isolates directly.
+            const showDirect = cat.subs.length === 0 || cat.isolateIds.length > 0;
             return (
               <section
                 key={cat.id}
@@ -193,76 +240,57 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
                 </header>
 
                 {!cat.collapsed && (
-                  <div className="ccat__subs">
-                    {cat.subs.map((sub) => {
-                      const subColor = sub.color ?? cat.color;
-                      return (
-                        <div key={sub.id} className="csub" style={{ ["--sub" as string]: subColor }}>
-                          <header className="csub__head">
-                            <button
-                              type="button"
-                              className={`chev${sub.collapsed ? "" : " is-open"}`}
-                              aria-label={sub.collapsed ? "Expand" : "Collapse"}
-                              onClick={() =>
-                                mutateSub(cat.id, sub.id, (s) => ({ ...s, collapsed: !s.collapsed }))
-                              }
-                            >
-                              ▸
-                            </button>
-                            <ColorDot
-                              color={subColor}
-                              onPick={(c) => mutateSub(cat.id, sub.id, (s) => ({ ...s, color: c }))}
-                            />
-                            <input
-                              className="csub__name"
-                              value={sub.name}
-                              onChange={(e) =>
-                                mutateSub(cat.id, sub.id, (s) => ({ ...s, name: e.target.value }))
-                              }
-                              aria-label="Subcategory name"
-                            />
-                            <span className="csub__count">{sub.isolateIds.length}</span>
-                            <button
-                              type="button"
-                              className="ccat__del"
-                              title="Delete subcategory"
-                              onClick={() => removeSub(cat.id, sub.id)}
-                            >
-                              ×
-                            </button>
-                          </header>
-
-                          {!sub.collapsed && (
-                            <div
-                              className={`csub__drop${overSub === sub.id ? " is-over" : ""}`}
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                if (overSub !== sub.id) setOverSub(sub.id);
-                              }}
-                              onDragLeave={() => setOverSub((cur) => (cur === sub.id ? null : cur))}
-                              onDrop={handleDrop(cat.id, sub.id)}
-                            >
-                              {sub.isolateIds.length === 0 && (
-                                <span className="cboard__empty">Drag isolates here</span>
-                              )}
-                              {sub.isolateIds.map((id) => {
-                                const s = byId.get(id);
-                                if (!s) return null;
-                                return (
-                                  <Chip
-                                    key={id}
-                                    s={s}
-                                    from={{ catId: cat.id, subId: sub.id }}
-                                    onOpen={() => onEdit(s)}
-                                    onRemove={() => removeIsolate(cat.id, sub.id, id)}
-                                  />
-                                );
-                              })}
+                  <div className="ccat__body">
+                    {showDirect && (
+                      <div className="ccat__direct">
+                        {renderDrop(cat.id, null, cat.isolateIds, cat.color)}
+                      </div>
+                    )}
+                    {cat.subs.length > 0 && (
+                      <div className="ccat__subs">
+                        {cat.subs.map((sub) => {
+                          const subColor = sub.color ?? cat.color;
+                          return (
+                            <div key={sub.id} className="csub" style={{ ["--sub" as string]: subColor }}>
+                              <header className="csub__head">
+                                <button
+                                  type="button"
+                                  className={`chev${sub.collapsed ? "" : " is-open"}`}
+                                  aria-label={sub.collapsed ? "Expand" : "Collapse"}
+                                  onClick={() =>
+                                    mutateSub(cat.id, sub.id, (s) => ({ ...s, collapsed: !s.collapsed }))
+                                  }
+                                >
+                                  ▸
+                                </button>
+                                <ColorDot
+                                  color={subColor}
+                                  onPick={(c) => mutateSub(cat.id, sub.id, (s) => ({ ...s, color: c }))}
+                                />
+                                <input
+                                  className="csub__name"
+                                  value={sub.name}
+                                  onChange={(e) =>
+                                    mutateSub(cat.id, sub.id, (s) => ({ ...s, name: e.target.value }))
+                                  }
+                                  aria-label="Subcategory name"
+                                />
+                                <span className="csub__count">{sub.isolateIds.length}</span>
+                                <button
+                                  type="button"
+                                  className="ccat__del"
+                                  title="Delete subcategory"
+                                  onClick={() => removeSub(cat.id, sub.id)}
+                                >
+                                  ×
+                                </button>
+                              </header>
+                              {!sub.collapsed && renderDrop(cat.id, sub.id, sub.isolateIds, subColor)}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>

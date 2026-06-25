@@ -14,6 +14,7 @@ export interface BoardCat {
   name: string;
   color: string;
   collapsed: boolean;
+  isolateIds: string[]; // isolates held directly on the category (no subcategory)
   subs: BoardSub[];
 }
 
@@ -50,6 +51,18 @@ export function newCat(index: number): BoardCat {
     name: `Category ${index}`,
     color: PRESET_COLORS[(index - 1) % PRESET_COLORS.length],
     collapsed: false,
-    subs: [newSub(1)],
+    isolateIds: [],
+    subs: [], // starts droppable directly; add subcategories for nesting
+  };
+}
+
+// Old saved boards may lack the category-level isolateIds, so backfill it.
+export function normalizeBoard(b: Board | null | undefined): Board {
+  return {
+    categories: (b?.categories ?? []).map((c) => ({
+      ...c,
+      isolateIds: c.isolateIds ?? [],
+      subs: (c.subs ?? []).map((s) => ({ ...s, isolateIds: s.isolateIds ?? [] })),
+    })),
   };
 }

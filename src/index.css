@@ -30,6 +30,9 @@
   --slate: #5b6573; /* variable / untyped */
   --slate-soft: #eaedf1;
   --slate-line: #d2d8df;
+  --auramine: #b8860b; /* auramine fluorescence — acid-fast */
+  --auramine-soft: #fbf1d8;
+  --auramine-line: #ead8a6;
 
   /* action accent — methylene blue */
   --accent: #0e7c86;
@@ -562,6 +565,9 @@ textarea {
 .seg__btn--gram.is-on:nth-child(2) {
   background: var(--safranin);
 } /* negative */
+.seg__btn--gram.is-on:nth-child(4) {
+  background: var(--auramine);
+} /* acid-fast */
 
 /* collapsible wrapper for a large choice field (e.g. motility type) */
 .cfield {
@@ -1027,6 +1033,10 @@ textarea {
   background: var(--safranin-soft);
   border-color: var(--safranin-line);
 }
+.band--acidfast .band__head {
+  background: var(--auramine-soft);
+  border-color: var(--auramine-line);
+}
 .band--other .band__head {
   background: var(--slate-soft);
   border-color: var(--slate-line);
@@ -1044,6 +1054,9 @@ textarea {
 }
 .band--negative .band__title {
   color: var(--safranin);
+}
+.band--acidfast .band__title {
+  color: var(--auramine);
 }
 .band--other .band__title {
   color: var(--slate);
@@ -1099,6 +1112,9 @@ textarea {
 }
 .band--negative .card::before {
   background: var(--safranin);
+}
+.band--acidfast .card::before {
+  background: var(--auramine);
 }
 .band--other .card::before {
   background: var(--slate);

@@ -54,10 +54,12 @@ data model, conventions, and what's done / outstanding.
 - **`species`** — one row per isolate. Columns: `id` (uuid), `created_at`,
   `genus`, `species`, `old_name` (synonym/former name, optional), `lineage`
   (jsonb, cached GBIF taxonomy), and one nullable text column per test:
-  `gram, afb, oxidase, catalase, indole, fermentation, distinctive_shape,
+  `gram, oxidase, catalase, indole, fermentation, distinctive_shape,
   motility, haemolysis, coagulase, aesculin, pyr_pyz, spores, dnase, tributyrin,
   hugh_leifson_of, atmosphere, methyl_red, voges_proskauer, citrate,
-  other_notes`.
+  other_notes`. `gram` is the unified **Staining** field — values
+  `Positive / Negative / Variable / Acid-fast` (the old separate `afb` column
+  was folded into it and dropped; see migration `2026-06-25_merge_afb_into_gram.sql`).
 - **`board`** — single row (`id = 'main'`) holding the Board view's layout as
   `data` jsonb. Shape in `src/lib/board.ts`.
 
@@ -84,8 +86,8 @@ bottom-sheet on mobile). Tree and Board are full-width.
   need separate edits.
 - `src/components/SpeciesForm.tsx` — entry/edit form. Collapsible test sections;
   the `choice` (motility) field is itself collapsible (closed by default).
-- `src/components/SpeciesList.tsx` — grouped by Gram band (positive / negative /
-  variable & untyped). Name search, **ID filter** (date-added presets + custom
+- `src/components/SpeciesList.tsx` — grouped by staining band (Gram-positive /
+  Gram-negative / **Acid-fast** / variable & untyped). Name search, **ID filter** (date-added presets + custom
   range, plus per-test value filters), **Collapse all / Expand all** (name-only
   cards), **Sort: Newest / A–Z**.
 - `src/components/SpeciesCard.tsx` — one isolate; collapsible to name-only via a

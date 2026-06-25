@@ -18,8 +18,7 @@ create table if not exists public.species (
   lineage           jsonb,
 
   -- biochemical / morphological test panel
-  gram              text,
-  afb               text,
+  gram              text, -- Staining: Positive / Negative / Variable / Acid-fast
   oxidase           text,
   catalase          text,
   indole            text,

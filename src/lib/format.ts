@@ -1,6 +1,6 @@
 import type { Species } from "../types";
 
-export type GramGroupId = "positive" | "negative" | "other";
+export type GramGroupId = "positive" | "negative" | "acidfast" | "other";
 
 export interface GramGroup {
   id: GramGroupId;
@@ -8,15 +8,17 @@ export interface GramGroup {
   blurb: string;
 }
 
-// The three bands the main list is organised into, in display order.
+// The bands the main list is organised into, in display order.
 export const GRAM_GROUPS: GramGroup[] = [
   { id: "positive", title: "Gram-positive", blurb: "Crystal violet retained" },
   { id: "negative", title: "Gram-negative", blurb: "Counterstained with safranin" },
+  { id: "acidfast", title: "Acid-fast", blurb: "Needs auramine / Ziehl-Neelsen; doesn't Gram-stain" },
   { id: "other", title: "Variable & untyped", blurb: "Gram-variable or not yet stained" },
 ];
 
 export function gramGroupOf(s: Species): GramGroupId {
   const g = (s.gram ?? "").trim().toLowerCase();
+  if (g.startsWith("acid") || g === "afb") return "acidfast";
   if (g.startsWith("pos") || g === "+") return "positive";
   if (g.startsWith("neg") || g === "−" || g === "-") return "negative";
   return "other";

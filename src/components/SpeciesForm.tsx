@@ -27,7 +27,6 @@ const EMPTY: SpeciesDraft = {
   species: "",
   old_name: null,
   gram: null,
-  afb: null,
   oxidase: null,
   catalase: null,
   indole: null,

@@ -1,30 +1,29 @@
-import { useState } from "react";
-import type { Species, TestKey } from "../types";
-import { CATEGORIES } from "../data/categories";
-import { binomial, polarityOf } from "../lib/format";
+import { useEffect, useState } from "react";
+import type { Species } from "../types";
+import { binomial } from "../lib/format";
+import Readout from "./Readout";
 
 interface SpeciesCardProps {
   species: Species;
   index: number;
   isEditing: boolean;
+  collapsed: boolean; // global "name only" state from the list toggle
   onEdit: (s: Species) => void;
   onDelete: (id: string) => void;
 }
-
-// Tests shown as compact readout chips (everything except the free-text note block).
-const CHIP_KEYS = CATEGORIES.filter((c) => c.key !== "other_notes");
 
 export default function SpeciesCard({
   species,
   index,
   isEditing,
+  collapsed,
   onEdit,
   onDelete,
 }: SpeciesCardProps) {
   const [confirming, setConfirming] = useState(false);
-
-  const results = CHIP_KEYS.map((cat) => ({ cat, value: species[cat.key] }))
-    .filter((r): r is { cat: (typeof CHIP_KEYS)[number]; value: string } => !!r.value && r.value.trim() !== "");
+  // Per-card open state, reset whenever the global collapse toggle flips.
+  const [open, setOpen] = useState(!collapsed);
+  useEffect(() => setOpen(!collapsed), [collapsed]);
 
   const notes = species.other_notes?.trim();
   const logged = new Date(species.created_at).toLocaleDateString(undefined, {
@@ -35,15 +34,23 @@ export default function SpeciesCard({
 
   return (
     <article
-      className={`card${isEditing ? " card--editing" : ""}`}
+      className={`card${isEditing ? " card--editing" : ""}${open ? "" : " card--collapsed"}`}
       style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
     >
       <div className="card__top">
+        <button
+          className={`chev card__chev${open ? " is-open" : ""}`}
+          aria-label={open ? "Collapse" : "Show details"}
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          ▸
+        </button>
         <h3 className="card__name">
           <em>{binomial(species.genus, species.species)}</em>
         </h3>
         <div className="card__meta">
-          <time dateTime={species.created_at}>{logged}</time>
+          {open && <time dateTime={species.created_at}>{logged}</time>}
           {confirming ? (
             <span className="card__confirm">
               <button className="linkbtn linkbtn--danger" onClick={() => onDelete(species.id)}>
@@ -76,34 +83,16 @@ export default function SpeciesCard({
         </div>
       </div>
 
-      {results.length > 0 ? (
-        <ul className="readout">
-          {results.map(({ cat, value }) => {
-            // Only the inherently polar tests get +/- colouring; descriptive
-            // ones (text, motility choice) stay neutral.
-            const polar =
-              cat.type === "sign" ||
-              cat.type === "gram" ||
-              cat.type === "haemolysis" ||
-              cat.type === "of";
-            const pol = polar ? polarityOf(value) : "neutral";
-            return (
-              <li key={cat.key as TestKey} className={`rchip rchip--${pol}`} title={`${cat.label}: ${value}`}>
-                <span className="rchip__k">{cat.short}</span>
-                <span className="rchip__v">{value}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="card__none">No test results recorded yet.</p>
-      )}
-
-      {notes && (
-        <details className="card__notes">
-          <summary>Notes</summary>
-          <p>{notes}</p>
-        </details>
+      {open && (
+        <>
+          <Readout species={species} />
+          {notes && (
+            <details className="card__notes">
+              <summary>Notes</summary>
+              <p>{notes}</p>
+            </details>
+          )}
+        </>
       )}
     </article>
   );

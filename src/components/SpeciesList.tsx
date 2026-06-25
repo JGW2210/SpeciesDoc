@@ -41,6 +41,7 @@ export default function SpeciesList({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
+  const [collapsed, setCollapsed] = useState(false);
 
   const activeKeys = Object.keys(filters) as TestKey[];
   const dateActive = !!(dateFrom || dateTo);
@@ -151,6 +152,15 @@ export default function SpeciesList({
           >
             ID filter
             {activeCount > 0 && <span className="filterbtn__badge">{activeCount}</span>}
+          </button>
+          <button
+            type="button"
+            className={`filterbtn${collapsed ? " has-active" : ""}`}
+            aria-pressed={collapsed}
+            title={collapsed ? "Show test details" : "Collapse to names only"}
+            onClick={() => setCollapsed((c) => !c)}
+          >
+            {collapsed ? "Expand all" : "Collapse all"}
           </button>
         </div>
       </div>
@@ -301,6 +311,7 @@ export default function SpeciesList({
                     species={s}
                     index={visible}
                     isEditing={s.id === editingId}
+                    collapsed={collapsed}
                     onEdit={onEdit}
                     onDelete={onDelete}
                   />

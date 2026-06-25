@@ -78,6 +78,52 @@ export function modernPhylum(name: string | null | undefined): string {
   return MODERN_PHYLUM[base] ?? base;
 }
 
+// GBIF's bacterial backbone sometimes hands back the wrong Proteobacteria class
+// (e.g. it has placed Neisseria under Alphaproteobacteria). These curated
+// overrides pin well-known genera to their classical Bergey's/LPSN class so the
+// tree's α/β/γ tags are correct. Keyed by lowercase genus; extend as needed.
+// Genera not listed fall through to whatever GBIF returned.
+const CLASS_BY_GENUS: Record<string, string> = {
+  // Betaproteobacteria — GTDB folds these into Gammaproteobacteria, so the GBIF
+  // backbone frequently mislabels them.
+  neisseria: "Betaproteobacteria",
+  eikenella: "Betaproteobacteria",
+  kingella: "Betaproteobacteria",
+  chromobacterium: "Betaproteobacteria",
+  bordetella: "Betaproteobacteria",
+  achromobacter: "Betaproteobacteria",
+  alcaligenes: "Betaproteobacteria",
+  burkholderia: "Betaproteobacteria",
+  ralstonia: "Betaproteobacteria",
+  cupriavidus: "Betaproteobacteria",
+  comamonas: "Betaproteobacteria",
+  acidovorax: "Betaproteobacteria",
+  delftia: "Betaproteobacteria",
+  oligella: "Betaproteobacteria",
+  taylorella: "Betaproteobacteria",
+  spirillum: "Betaproteobacteria",
+  // Alphaproteobacteria
+  brucella: "Alphaproteobacteria",
+  ochrobactrum: "Alphaproteobacteria",
+  bartonella: "Alphaproteobacteria",
+  rickettsia: "Alphaproteobacteria",
+  orientia: "Alphaproteobacteria",
+  ehrlichia: "Alphaproteobacteria",
+  anaplasma: "Alphaproteobacteria",
+  agrobacterium: "Alphaproteobacteria",
+  methylobacterium: "Alphaproteobacteria",
+  sphingomonas: "Alphaproteobacteria",
+  roseomonas: "Alphaproteobacteria",
+  paracoccus: "Alphaproteobacteria",
+  afipia: "Alphaproteobacteria",
+};
+
+// The class to display for an isolate: a curated override by genus if we have
+// one, otherwise GBIF's cached class.
+export function resolveClass(genus: string, gbifClass?: string | null): string | null {
+  return CLASS_BY_GENUS[genus.trim().toLowerCase()] ?? gbifClass ?? null;
+}
+
 // Build the topology phylum → (class, only for Proteobacteria) → genus → isolate.
 // Order/family are intentionally skipped to keep the radial tree readable like
 // the reference figure; the full lineage is still shown in the detail panel.
@@ -100,8 +146,9 @@ export function buildTaxonomy(species: Species[]): TaxNode {
 
     if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
       node = child(node, modernPhylum(lin.phylum), "phylum");
-      if (lin.class && GREEK[lin.class]) {
-        node = child(node, lin.class, "class", GREEK[lin.class]);
+      const cls = resolveClass(s.genus, lin.class);
+      if (cls && GREEK[cls]) {
+        node = child(node, cls, "class", GREEK[cls]);
       }
       // Use the entered (current) genus so the tree shows modern names, even when
       // GBIF placed the isolate via an old synonym.

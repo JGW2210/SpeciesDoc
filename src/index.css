@@ -1971,7 +1971,9 @@ textarea {
   border-radius: var(--radius-sm);
 }
 .cchip--card.cchip--open {
-  flex-basis: 100%;
+  flex: 0 1 auto;
+  width: 248px;
+  max-width: 100%;
   padding: 6px 9px 9px;
   background: var(--surface);
 }

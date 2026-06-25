@@ -31,6 +31,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [query, setQuery] = useState("");
   const [overSub, setOverSub] = useState<string | null>(null);
+  const [allOpen, setAllOpen] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const loaded = useRef(false);
   // Always-current snapshot so the unmount flush saves the latest state.
@@ -159,6 +160,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
               s={s}
               from={{ catId, subId }}
               expandable
+              defaultOpen={allOpen}
               onOpen={() => onEdit(s)}
               onRemove={() => removeIsolate(catId, subId, id)}
             />
@@ -191,6 +193,14 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
               {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Couldn’t save"}
             </span>
           )}
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setAllOpen((o) => !o)}
+            title={allOpen ? "Collapse all isolate details" : "Expand all isolate details"}
+          >
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
           <button type="button" className="btn btn--primary" onClick={addCategory}>
             + Add category
           </button>
@@ -337,10 +347,13 @@ interface ChipProps {
   onRemove?: () => void;
   onOpen?: () => void;
   expandable?: boolean;
+  defaultOpen?: boolean;
 }
 
-function Chip({ s, from, onRemove, onOpen, expandable }: ChipProps) {
-  const [open, setOpen] = useState(false);
+function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen }: ChipProps) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  // Sync to the board-wide expand/collapse toggle.
+  useEffect(() => setOpen(!!defaultOpen), [defaultOpen]);
   const dragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", JSON.stringify({ isoId: s.id, from }));
     e.dataTransfer.effectAllowed = "move";

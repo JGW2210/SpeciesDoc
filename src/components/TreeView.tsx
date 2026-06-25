@@ -6,7 +6,7 @@ import {
   type HierarchyPointLink,
 } from "d3-hierarchy";
 import { polygonHull, polygonCentroid } from "d3-polygon";
-import { buildTaxonomy, modernPhylum, resolveClass, type TaxNode } from "../lib/taxonomy";
+import { buildTaxonomy, resolvePhylum, resolveClass, type TaxNode } from "../lib/taxonomy";
 import { binomial } from "../lib/format";
 import { CATEGORIES } from "../data/categories";
 import type { Species } from "../types";
@@ -394,7 +394,7 @@ function Lineagecrumb({ species }: { species: Species }) {
     return <p className="treedetail__crumb treedetail__crumb--none">No GBIF lineage — grouped by Gram.</p>;
   }
   const parts = [
-    modernPhylum(lin.phylum),
+    resolvePhylum(species.genus, lin.phylum),
     resolveClass(species.genus, lin.class),
     lin.order,
     lin.family,

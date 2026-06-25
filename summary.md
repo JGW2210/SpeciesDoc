@@ -105,10 +105,27 @@ bottom-sheet on mobile). Tree and Board are full-width.
 - `src/lib/gbif.ts` — `fetchLineage(genus, species, oldName?)`: matches against
   the GBIF backbone (browser-side; GBIF allows CORS). Tries the current name,
   falls back to `old_name` if it can't be placed.
-- `src/lib/taxonomy.ts` — `buildTaxonomy`, and `modernPhylum()` which maps GBIF's
-  pre-2021 phylum names to current ICNP names (Firmicutes→Bacillota,
-  Proteobacteria→Pseudomonadota, Actinobacteriota→Actinomycetota, etc.) and
-  strips GTDB suffixes (`Firmicutes_A` → Bacillota).
+- `src/lib/taxonomy.ts` — `buildTaxonomy`, plus three display-time normalisers
+  applied to the **cached** GBIF lineage (so existing rows are corrected without
+  a re-fetch or DB change):
+  - `modernPhylum()` maps GBIF's pre-2021 phylum names to current ICNP names
+    (Firmicutes→Bacillota, Proteobacteria→Pseudomonadota,
+    Actinobacteriota→Actinomycetota, etc.) and strips GTDB suffixes
+    (`Firmicutes_A` → Bacillota).
+  - `resolveClass(genus, gbifClass)` — curated **genus→class override**
+    (`CLASS_BY_GENUS`). GBIF/GTDB mislabels the classic Proteobacteria classes
+    (it folds Betaproteobacteria into Gamma), so e.g. Neisseria, Bordetella,
+    Burkholderia, Delftia, Achromobacter, Alcaligenes are pinned to
+    Betaproteobacteria; Brucella/Agrobacterium/Ochrobactrum to Alpha. Falls
+    through to GBIF's class when no override. Only Proteobacteria classes draw an
+    α/β/γ tag (the `GREEK` map).
+  - `resolvePhylum(genus, gbifPhylum)` — curated **genus→phylum override**
+    (`PHYLUM_BY_GENUS`). Pins the wall-less Mollicutes (Mycoplasma, Ureaplasma,
+    Mycoplasmoides, …) to their own ICNP phylum **Mycoplasmatota** instead of the
+    Bacillota nesting GBIF/GTDB returns. Falls through to `modernPhylum()`.
+  - Both override maps are keyed by **lowercase entered genus** and are easy to
+    extend as more discrepancies surface — a typo in the entered genus makes a
+    row miss its override, so name spelling matters.
 - `src/components/CustomView.tsx` — the **Board**. User-defined categories →
   subcategories (`src/lib/board.ts` types). Add/rename/delete categories &
   subs, custom colours (swatch picker), collapsible. Drag isolates from a
@@ -118,7 +135,10 @@ bottom-sheet on mobile). Tree and Board are full-width.
   and reorder subcategories within a category. Deleting a category asks for
   confirmation. Persists to the `board` table (debounced + flush on unmount;
   shows Saving…/Saved/Couldn't-save).
-- `src/lib/format.ts` — `binomial()`, Gram grouping, `polarityOf()`.
+- `src/lib/format.ts` — `binomial()`, `polarityOf()`, and the staining bands:
+  `GRAM_GROUPS` + `gramGroupOf()` route each isolate to one of four list bands —
+  **Gram-positive / Gram-negative / Acid-fast / Variable & untyped** — off the
+  unified `gram` (Staining) value.
 
 ## Conventions
 
@@ -138,6 +158,8 @@ bottom-sheet on mobile). Tree and Board are full-width.
   mobile dragging is limited).
 - Reorder chips within a zone; move subcategories between categories.
 - Tree: zoom/pan for large trees; tune the genus auto-collapse threshold (3).
+- A **"force re-fetch lineage"** action for already-placed rows (current backfill
+  skips them), to repair stale GBIF caches without editing + re-saving.
 - Optional: confirm on subcategory delete; CSV export of a filtered view.
 - Auth / per-user data if it ever stops being a personal single-user log.
 
@@ -147,3 +169,16 @@ bottom-sheet on mobile). Tree and Board are full-width.
   no branch lengths or bootstrap values (that data doesn't exist here).
 - Modern names are primary and shown everywhere; the old/synonym name appears
   only on the tree detail card and is used for the GBIF fallback lookup.
+- **GBIF's bacterial backbone is GTDB-flavoured and unreliable at class/phylum
+  level** (it folds Betaproteobacteria into Gamma and nests Mollicutes in
+  Bacillota). Corrections live in the `CLASS_BY_GENUS` / `PHYLUM_BY_GENUS`
+  override maps in `taxonomy.ts` — extend them, don't trust GBIF's class/phylum
+  blindly. These apply at display time, so they fix already-cached rows.
+- The **"Fetch lineage" button only backfills *unplaced* rows** (no lineage or
+  `matchType === "NONE"`); it will **not** re-pull an already-placed isolate.
+  The only way to refresh a stale/placed lineage today is to edit + re-save the
+  isolate (which re-runs the GBIF lookup). A "force re-fetch" is still an open
+  possible next step.
+- **Staining is one field.** The old separate `afb` column was folded into
+  `gram` (values: `Positive / Negative / Variable / Acid-fast`); `afb` was
+  dropped via `2026-06-25_merge_afb_into_gram.sql`.

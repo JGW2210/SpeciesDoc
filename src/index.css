@@ -1947,3 +1947,46 @@ textarea {
 .cboard__save--error {
   color: var(--neg);
 }
+
+/* list card: collapse-to-name toggle */
+.card__chev {
+  flex: none;
+  margin-top: 2px;
+}
+.card__name {
+  flex: 1;
+  min-width: 0;
+}
+.card--collapsed .card__top {
+  margin-bottom: 0;
+}
+
+/* board chip: expandable to show the readout */
+.cchip--card {
+  cursor: default;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 4px 6px 4px 4px;
+  border-radius: var(--radius-sm);
+}
+.cchip--card.cchip--open {
+  flex-basis: 100%;
+  padding: 6px 9px 9px;
+  background: var(--surface);
+}
+.cchip__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cchip--card .cchip__name {
+  flex: 1;
+  min-width: 0;
+}
+.cchip__detail {
+  margin-top: 8px;
+}
+.cchip__detail .readout {
+  gap: 4px;
+}

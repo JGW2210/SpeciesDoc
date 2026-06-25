@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { binomial } from "../lib/format";
+import Readout from "./Readout";
 import {
   EMPTY_BOARD,
   PRESET_COLORS,
@@ -157,6 +158,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
               key={id}
               s={s}
               from={{ catId, subId }}
+              expandable
               onOpen={() => onEdit(s)}
               onRemove={() => removeIsolate(catId, subId, id)}
             />
@@ -334,25 +336,56 @@ interface ChipProps {
   from: DragData["from"];
   onRemove?: () => void;
   onOpen?: () => void;
+  expandable?: boolean;
 }
 
-function Chip({ s, from, onRemove, onOpen }: ChipProps) {
+function Chip({ s, from, onRemove, onOpen, expandable }: ChipProps) {
+  const [open, setOpen] = useState(false);
+  const dragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData("text/plain", JSON.stringify({ isoId: s.id, from }));
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  if (!expandable) {
+    return (
+      <span className="cchip" draggable onDragStart={dragStart}>
+        <em className="cchip__name" onClick={onOpen} title={onOpen ? "Edit isolate" : undefined}>
+          {binomial(s.genus, s.species)}
+        </em>
+        {onRemove && (
+          <button type="button" className="cchip__x" title="Remove" onClick={onRemove}>
+            ×
+          </button>
+        )}
+      </span>
+    );
+  }
+
   return (
-    <span
-      className="cchip"
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", JSON.stringify({ isoId: s.id, from }));
-        e.dataTransfer.effectAllowed = "move";
-      }}
-    >
-      <em className="cchip__name" onClick={onOpen} title={onOpen ? "Edit isolate" : undefined}>
-        {binomial(s.genus, s.species)}
-      </em>
-      {onRemove && (
-        <button type="button" className="cchip__x" title="Remove" onClick={onRemove}>
-          ×
+    <span className={`cchip cchip--card${open ? " cchip--open" : ""}`} draggable onDragStart={dragStart}>
+      <span className="cchip__row">
+        <button
+          type="button"
+          className={`chev${open ? " is-open" : ""}`}
+          aria-expanded={open}
+          title={open ? "Hide details" : "Show details"}
+          onClick={() => setOpen((o) => !o)}
+        >
+          ▸
         </button>
+        <em className="cchip__name" onClick={onOpen} title="Edit isolate">
+          {binomial(s.genus, s.species)}
+        </em>
+        {onRemove && (
+          <button type="button" className="cchip__x" title="Remove" onClick={onRemove}>
+            ×
+          </button>
+        )}
+      </span>
+      {open && (
+        <div className="cchip__detail">
+          <Readout species={s} emptyText="No test results recorded." />
+        </div>
       )}
     </span>
   );

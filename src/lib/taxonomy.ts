@@ -78,6 +78,26 @@ export function modernPhylum(name: string | null | undefined): string {
   return MODERN_PHYLUM[base] ?? base;
 }
 
+// GBIF/GTDB nests some genera inside a broader phylum that the ICNP recognises
+// separately. Pin these to their ICNP phylum, keyed by lowercase genus. The
+// classic case is the wall-less Mollicutes (Mycoplasma & relatives), which GTDB
+// places inside Bacillota/Firmicutes but ICNP keeps as phylum Mycoplasmatota.
+const PHYLUM_BY_GENUS: Record<string, string> = {
+  mycoplasma: "Mycoplasmatota",
+  mycoplasmoides: "Mycoplasmatota", // M. genitalium / pneumoniae were moved here
+  mycoplasmopsis: "Mycoplasmatota",
+  metamycoplasma: "Mycoplasmatota", // former Mycoplasma hominis
+  ureaplasma: "Mycoplasmatota",
+  acholeplasma: "Mycoplasmatota",
+  spiroplasma: "Mycoplasmatota",
+};
+
+// The phylum to display for an isolate: a curated genus override if we have one,
+// otherwise GBIF's cached phylum (modernised).
+export function resolvePhylum(genus: string, gbifPhylum?: string | null): string {
+  return PHYLUM_BY_GENUS[genus.trim().toLowerCase()] ?? modernPhylum(gbifPhylum);
+}
+
 // GBIF's bacterial backbone sometimes hands back the wrong Proteobacteria class
 // (e.g. it has placed Neisseria under Alphaproteobacteria). These curated
 // overrides pin well-known genera to their classical Bergey's/LPSN class so the
@@ -116,6 +136,16 @@ const CLASS_BY_GENUS: Record<string, string> = {
   roseomonas: "Alphaproteobacteria",
   paracoccus: "Alphaproteobacteria",
   afipia: "Alphaproteobacteria",
+  // Mollicutes — paired with the Mycoplasmatota phylum override above so the
+  // detail breadcrumb reads consistently (GBIF reports these as "Bacilli").
+  // Not in GREEK, so no class node/tag is drawn on the tree.
+  mycoplasma: "Mollicutes",
+  mycoplasmoides: "Mollicutes",
+  mycoplasmopsis: "Mollicutes",
+  metamycoplasma: "Mollicutes",
+  ureaplasma: "Mollicutes",
+  acholeplasma: "Mollicutes",
+  spiroplasma: "Mollicutes",
 };
 
 // The class to display for an isolate: a curated override by genus if we have
@@ -145,7 +175,7 @@ export function buildTaxonomy(species: Species[]): TaxNode {
     let node = root;
 
     if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
-      node = child(node, modernPhylum(lin.phylum), "phylum");
+      node = child(node, resolvePhylum(s.genus, lin.phylum), "phylum");
       const cls = resolveClass(s.genus, lin.class);
       if (cls && GREEK[cls]) {
         node = child(node, cls, "class", GREEK[cls]);

@@ -7,8 +7,9 @@ import SetupBanner from "./components/SetupBanner";
 import SpeciesForm from "./components/SpeciesForm";
 import SpeciesList from "./components/SpeciesList";
 import TreeView from "./components/TreeView";
+import CustomView from "./components/CustomView";
 
-type View = "list" | "tree";
+type View = "list" | "tree" | "custom";
 
 export default function App() {
   const [species, setSpecies] = useState<Species[]>([]);
@@ -163,9 +164,18 @@ export default function App() {
         >
           Tree
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "custom"}
+          className={`viewbar__btn${view === "custom" ? " is-on" : ""}`}
+          onClick={() => setView("custom")}
+        >
+          Board
+        </button>
       </div>
 
-      <main className={`layout${view === "tree" ? " layout--tree" : ""}`}>
+      <main className={`layout${view !== "list" ? " layout--full" : ""}`}>
         {view === "list" && (
           <section className={`layout__form${formOpen ? " is-open" : ""}`}>
             <SpeciesForm
@@ -185,13 +195,15 @@ export default function App() {
               onEdit={handleEdit}
               onDelete={handleDelete}
             />
-          ) : (
+          ) : view === "tree" ? (
             <TreeView
               species={species}
               enriching={enriching}
               onRefreshLineage={refreshLineage}
               onEdit={handleEdit}
             />
+          ) : (
+            <CustomView species={species} onEdit={handleEdit} />
           )}
         </section>
       </main>

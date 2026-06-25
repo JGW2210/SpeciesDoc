@@ -24,6 +24,9 @@ Built with **Vite + React + TypeScript** and **Supabase** for storage.
   clickable tips. Lineage is fetched from the free **GBIF** backbone taxonomy on
   save and cached; a "Fetch lineage" button backfills existing rows. Branches
   encode taxonomic rank, not evolutionary distance.
+- **Board view** (toggle next to List/Tree): build your own collapsible
+  categories and subcategories with custom names and colours, then drag isolates
+  in from the palette to arrange them however you like. Saved to a `board` table.
 - Modern names are primary and shown on the tree; phylum names are modernised
   for display (e.g. Actinobacteriota → Actinomycetota). An optional **old name /
   synonym** can be recorded per isolate — it's used as a fallback for the GBIF

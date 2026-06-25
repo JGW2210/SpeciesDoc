@@ -30,9 +30,21 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [query, setQuery] = useState("");
   const [overSub, setOverSub] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const loaded = useRef(false);
+  // Always-current snapshot so the unmount flush saves the latest state.
+  const boardRef = useRef(board);
+  boardRef.current = board;
 
   const byId = useMemo(() => new Map(species.map((s) => [s.id, s])), [species]);
+
+  const writeBoard = async (b: Board): Promise<boolean> => {
+    if (!supabase) return false;
+    const { error } = await supabase
+      .from("board")
+      .upsert({ id: BOARD_ID, data: b, updated_at: new Date().toISOString() });
+    return !error;
+  };
 
   // Load the saved board once.
   useEffect(() => {
@@ -54,13 +66,21 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   // Debounced persist on every change (after the initial load).
   useEffect(() => {
     if (!loaded.current || !supabase) return;
-    const t = setTimeout(() => {
-      void supabase!
-        .from("board")
-        .upsert({ id: BOARD_ID, data: board, updated_at: new Date().toISOString() });
-    }, 600);
+    setSaveState("saving");
+    const t = setTimeout(async () => {
+      const ok = await writeBoard(board);
+      setSaveState(ok ? "saved" : "error");
+    }, 500);
     return () => clearTimeout(t);
   }, [board]);
+
+  // Flush the latest state when leaving the view, so a pending debounce isn't
+  // lost on unmount (the previous cause of changes not persisting).
+  useEffect(() => {
+    return () => {
+      if (loaded.current && supabase) void writeBoard(boardRef.current);
+    };
+  }, []);
 
   // --- mutations -----------------------------------------------------------
   const mutateCat = (catId: string, fn: (c: BoardCat) => BoardCat) =>
@@ -163,9 +183,16 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
           <h2 className="cboard__title">Custom board</h2>
           <p className="cboard__sub">Build your own categories and drag isolates in from the palette.</p>
         </div>
-        <button type="button" className="btn btn--primary" onClick={addCategory}>
-          + Add category
-        </button>
+        <div className="cboard__baracts">
+          {saveState !== "idle" && (
+            <span className={`cboard__save cboard__save--${saveState}`}>
+              {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Couldn’t save"}
+            </span>
+          )}
+          <button type="button" className="btn btn--primary" onClick={addCategory}>
+            + Add category
+          </button>
+        </div>
       </div>
 
       {/* palette of all isolates to drag from */}

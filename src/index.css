@@ -1925,3 +1925,25 @@ textarea {
 .ccat__direct + .ccat__subs {
   border-top: 1px solid var(--border);
 }
+
+/* board save status */
+.cboard__baracts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.cboard__save {
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cboard__save--saving {
+  color: var(--muted);
+}
+.cboard__save--saved {
+  color: var(--pos);
+}
+.cboard__save--error {
+  color: var(--neg);
+}

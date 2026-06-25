@@ -95,10 +95,16 @@ bottom-sheet on mobile). Tree and Board are full-width.
 - `src/components/Readout.tsx` — shared test-chip readout (used by the card and
   the board chips).
 - `src/components/TreeView.tsx` — the tree view. A `TreeView` container owns a
-  **Dendrogram / Outline** layout toggle, a shared **search** box, and the shared
-  detail drawer (click a tip → lineage breadcrumb + readout + edit). Topology is
-  `buildTaxonomy` (in `lib/taxonomy.ts`) → phylum → (class, Proteobacteria only,
-  for α/β/γ) → genus → isolate.
+  three-way **Radial / Dendrogram / Outline** layout toggle, a shared **search**
+  box, and the shared detail drawer (click a tip → lineage breadcrumb + readout +
+  edit). Topology is `buildTaxonomy` (in `lib/taxonomy.ts`) → phylum → (class,
+  Proteobacteria only, for α/β/γ) → genus → isolate. The two SVG layouts share
+  interaction logic via the `useTreeNav` hook (collapse overrides, focus/re-root,
+  pan/zoom), the `useFit` search-fit effect, and the `TreeControls` component
+  (breadcrumb + Expand/Collapse all + Reset view/layout).
+  - **`RadialTree`** — the original floating radial layout: phylum hulls (convex
+    blobs), greek class tags, gentle float animation; click a hull label/greek tag
+    to focus.
   - **`Dendrogram`** (in the same file) — a horizontal rectangular cladogram
     (root at left, orthogonal "elbow" branches fanning right, species labels down
     the right edge; rank labels on the left-side internal nodes). d3 `cluster`

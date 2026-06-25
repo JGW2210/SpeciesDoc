@@ -4,7 +4,9 @@ import {
   cluster,
   type HierarchyNode,
   type HierarchyPointNode,
+  type HierarchyPointLink,
 } from "d3-hierarchy";
+import { polygonHull, polygonCentroid } from "d3-polygon";
 import { select } from "d3-selection";
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import {
@@ -19,15 +21,21 @@ import { CATEGORIES } from "../data/categories";
 import OutlineTree from "./OutlineTree";
 import type { Species } from "../types";
 
-// Horizontal dendrogram geometry (a rectangular cladogram: root at the left,
-// ranks fanning out to the right, species labels down the right edge).
-const ROW_H = 17; // vertical spacing between leaves
-const COL_W = 156; // horizontal spacing between ranks
+const COLLAPSE_MIN = 3; // genera with this many isolates auto-collapse into one node
+
+// Radial geometry.
+const SIZE = 1000;
+const C = SIZE / 2;
+const RADIUS = 332;
+const HULL_PAD = 30;
+
+// Dendrogram geometry (horizontal rectangular cladogram).
+const ROW_H = 17;
+const COL_W = 156;
 const PAD_LEFT = 30;
 const PAD_TOP = 24;
 const PAD_BOT = 24;
-const LABEL_W = 300; // right margin reserved for species labels
-const COLLAPSE_MIN = 3; // genera with this many isolates auto-collapse into one node
+const LABEL_W = 300;
 
 const PHYLUM_COLORS = [
   "#6a2c91",
@@ -47,9 +55,14 @@ function colorFor(name: string): string {
   return PHYLUM_COLORS[h % PHYLUM_COLORS.length];
 }
 
-// Cartesian projection: depth (node.y) → x, breadth (node.x) → y.
-const sx = (n: HierarchyPointNode<TaxNode>) => n.y + PAD_LEFT;
-const sy = (n: HierarchyPointNode<TaxNode>) => n.x + PAD_TOP;
+// Radial polar → cartesian (centre at origin).
+function polar(node: HierarchyPointNode<TaxNode>): [number, number] {
+  const a = node.x - Math.PI / 2;
+  return [node.y * Math.cos(a), node.y * Math.sin(a)];
+}
+// Dendrogram: depth (node.y) → x, breadth (node.x) → y.
+const dx = (n: HierarchyPointNode<TaxNode>) => n.y + PAD_LEFT;
+const dy = (n: HierarchyPointNode<TaxNode>) => n.x + PAD_TOP;
 
 // Stable collapse key per collapsible node (rank-prefixed to avoid clashes).
 function keyOf(node: TaxNode, phylum: string): string | null {
@@ -59,7 +72,6 @@ function keyOf(node: TaxNode, phylum: string): string | null {
   return null;
 }
 
-// Genera with many isolates start collapsed; phyla/classes start expanded.
 function defaultCollapsed(node: TaxNode): boolean {
   return node.rank === "genus" && gatherIsolates(node).length >= COLLAPSE_MIN;
 }
@@ -98,8 +110,6 @@ function findByKey(node: TaxNode, phylum: string, target: string): TaxNode | nul
   return null;
 }
 
-// Every collapsible genus key, and which ones are "big" (collapsed by default),
-// so Expand-all / Collapse-all can compute the right override set.
 function genusKeys(species: Species[]): { all: string[]; big: Set<string> } {
   const all: string[] = [];
   const big = new Set<string>();
@@ -116,7 +126,6 @@ function genusKeys(species: Species[]): { all: string[]; big: Set<string> } {
   return { all, big };
 }
 
-// "Bacteria › Pseudomonadota › β" trail for the current focus key.
 function focusCrumb(focus: string | null): { label: string; key: string | null }[] {
   const trail: { label: string; key: string | null }[] = [{ label: "Bacteria", key: null }];
   if (!focus) return trail;
@@ -131,6 +140,130 @@ function focusCrumb(focus: string | null): { label: string; key: string | null }
   return trail;
 }
 
+const phylumOf = (focus: string | null) =>
+  focus ? (focus.startsWith("p:") ? focus.slice(2) : focus.slice(2, focus.indexOf("/"))) : null;
+
+// Shared interaction state for both SVG layouts: collapse overrides, focus
+// (re-root), and pan/zoom.
+function useTreeNav(species: Species[]) {
+  const [overrides, setOverrides] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<string | null>(null);
+  const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+
+  const toggle = (key: string) =>
+    setOverrides((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const gk = useMemo(() => genusKeys(species), [species]);
+  const expandAll = () => setOverrides(new Set(gk.big));
+  const collapseAll = () => setOverrides(new Set(gk.all.filter((k) => !gk.big.has(k))));
+  const resetLayout = () => {
+    setOverrides(new Set());
+    setFocus(null);
+  };
+  const resetView = () => {
+    if (svgRef.current && zoomRef.current)
+      select(svgRef.current).call(zoomRef.current.transform, zoomIdentity);
+  };
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const sel = select(svg);
+    const z = d3zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.4, 12])
+      .on("zoom", (e) => setTransform(e.transform));
+    sel.call(z).on("dblclick.zoom", null); // keep double-clicks for nodes
+    zoomRef.current = z;
+    return () => {
+      sel.on(".zoom", null);
+    };
+  }, []);
+
+  return {
+    overrides,
+    focus,
+    setFocus,
+    transform,
+    svgRef,
+    zoomRef,
+    toggle,
+    expandAll,
+    collapseAll,
+    resetLayout,
+    resetView,
+  };
+}
+
+type TreeNav = ReturnType<typeof useTreeNav>;
+
+// Apply the fit-to-search transform (or reset when the search clears).
+function useFit(nav: TreeNav, fit: ZoomTransform | null, fitSig: string, q: string) {
+  useEffect(() => {
+    const svg = nav.svgRef.current;
+    const z = nav.zoomRef.current;
+    if (!svg || !z) return;
+    const sel = select(svg);
+    if (fit) sel.call(z.transform, fit);
+    else if (q === "") sel.call(z.transform, zoomIdentity);
+  }, [fitSig, q]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+function TreeControls({ nav }: { nav: TreeNav }) {
+  const { transform, overrides, focus } = nav;
+  const crumb = focusCrumb(focus);
+  return (
+    <>
+      {focus && (
+        <nav className="tree__crumb" aria-label="Focused branch">
+          {crumb.map((c, i) => (
+            <span key={i} className="tree__crumb-item">
+              {i > 0 && (
+                <span className="tree__crumb-sep" aria-hidden="true">
+                  ›
+                </span>
+              )}
+              {i < crumb.length - 1 ? (
+                <button type="button" className="tree__crumb-link" onClick={() => nav.setFocus(c.key)}>
+                  {c.label}
+                </button>
+              ) : (
+                <span className="tree__crumb-cur">{c.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
+      <div className="tree__controls">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={nav.expandAll}>
+          Expand all
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={nav.collapseAll}>
+          Collapse all
+        </button>
+        {(transform.k !== 1 || transform.x !== 0 || transform.y !== 0) && (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={nav.resetView}>
+            Reset view
+          </button>
+        )}
+        {(overrides.size > 0 || focus) && (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={nav.resetLayout}>
+            Reset layout
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+type Layout = "radial" | "dendro" | "outline";
+
 interface TreeViewProps {
   species: Species[];
   enriching: boolean;
@@ -139,7 +272,7 @@ interface TreeViewProps {
 }
 
 export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
-  const [mode, setMode] = useState<"dendro" | "outline">("dendro");
+  const [mode, setMode] = useState<Layout>("dendro");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Species | null>(null);
 
@@ -154,6 +287,12 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
 
   const missing = species.filter((s) => !s.lineage || s.lineage.matchType === "NONE").length;
   const unplaced = species.filter((s) => s.lineage && s.lineage.matchType === "NONE");
+  const viewProps = {
+    species,
+    query,
+    selectedId: selected?.id ?? null,
+    onSelect: setSelected,
+  };
 
   return (
     <div className="tree">
@@ -174,22 +313,23 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
             aria-label="Search the tree by name"
           />
           <div className="treetoggle" role="group" aria-label="Tree layout">
-            <button
-              type="button"
-              className={`treetoggle__btn${mode === "dendro" ? " is-on" : ""}`}
-              aria-pressed={mode === "dendro"}
-              onClick={() => setMode("dendro")}
-            >
-              Dendrogram
-            </button>
-            <button
-              type="button"
-              className={`treetoggle__btn${mode === "outline" ? " is-on" : ""}`}
-              aria-pressed={mode === "outline"}
-              onClick={() => setMode("outline")}
-            >
-              Outline
-            </button>
+            {(
+              [
+                ["radial", "Radial"],
+                ["dendro", "Dendrogram"],
+                ["outline", "Outline"],
+              ] as [Layout, string][]
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                className={`treetoggle__btn${mode === m ? " is-on" : ""}`}
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <button
             type="button"
@@ -204,20 +344,12 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
       </div>
 
       <div className={`tree__stage tree__stage--${mode}`}>
-        {mode === "dendro" ? (
-          <Dendrogram
-            species={species}
-            query={query}
-            selectedId={selected?.id ?? null}
-            onSelect={setSelected}
-          />
+        {mode === "radial" ? (
+          <RadialTree {...viewProps} />
+        ) : mode === "dendro" ? (
+          <Dendrogram {...viewProps} />
         ) : (
-          <OutlineTree
-            species={species}
-            query={query}
-            selectedId={selected?.id ?? null}
-            onSelect={setSelected}
-          />
+          <OutlineTree {...viewProps} />
         )}
 
         {selected && (
@@ -262,61 +394,288 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
   );
 }
 
-interface DendrogramProps {
+interface ViewProps {
   species: Species[];
   query: string;
   selectedId: string | null;
   onSelect: (s: Species) => void;
 }
 
-function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
-  const [overrides, setOverrides] = useState<Set<string>>(new Set());
-  const [focus, setFocus] = useState<string | null>(null);
-  const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
+  const nav = useTreeNav(species);
+  const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
+  const focusPhylum = phylumOf(focus);
 
-  const toggle = (key: string) =>
-    setOverrides((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+  const { leaves, links, hulls, handles, fit, fitSig } = useMemo(() => {
+    const full = collapse(buildTaxonomy(species), "", overrides);
+    const rootData = focus ? findByKey(full, "", focus) ?? full : full;
+    const focused = rootData !== full;
+    const root = cluster<TaxNode>()
+      .size([2 * Math.PI, RADIUS])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(rootData));
+
+    const allLeaves = root.leaves();
+    const allLinks = root.links();
+
+    const handleNodes = root
+      .descendants()
+      .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
+
+    // One hull per *expanded* phylum; none when focused into a single branch.
+    const phyla = focused ? [] : (root.children ?? []).filter((p) => !!p.children);
+    const hullShapes = phyla.map((p) => {
+      const pts = p.leaves().map(polar);
+      pts.push(polar(p));
+      const color = colorFor(p.data.name);
+      const hull = pts.length >= 3 ? polygonHull(pts as [number, number][]) : null;
+
+      let path: string;
+      let labelAt: [number, number];
+      if (hull) {
+        const [cx, cy] = polygonCentroid(hull);
+        const padded = hull.map(([x, y]) => {
+          const ddx = x - cx;
+          const ddy = y - cy;
+          const len = Math.hypot(ddx, ddy) || 1;
+          return [x + (ddx / len) * HULL_PAD, y + (ddy / len) * HULL_PAD] as [number, number];
+        });
+        path = "M" + padded.map((p2) => p2.join(",")).join("L") + "Z";
+        labelAt = padded.reduce((far, p2) => (Math.hypot(...p2) > Math.hypot(...far) ? p2 : far), padded[0]);
+      } else {
+        const cx = pts.reduce((s, p2) => s + p2[0], 0) / pts.length;
+        const cy = pts.reduce((s, p2) => s + p2[1], 0) / pts.length;
+        path = "";
+        labelAt = [cx, cy < 0 ? cy - 14 : cy + 14];
+      }
+      return { name: p.data.name, color, path, labelAt };
     });
 
-  const gk = useMemo(() => genusKeys(species), [species]);
-  const expandAll = () => setOverrides(new Set(gk.big));
-  const collapseAll = () => setOverrides(new Set(gk.all.filter((k) => !gk.big.has(k))));
-  const resetLayout = () => {
-    setOverrides(new Set());
-    setFocus(null);
-  };
-  const resetView = () => {
-    if (svgRef.current && zoomRef.current)
-      select(svgRef.current).call(zoomRef.current.transform, zoomIdentity);
-  };
+    let fit: ZoomTransform | null = null;
+    let fitSig = "";
+    if (q) {
+      const pts = allLeaves
+        .filter((leaf) => {
+          const d = leaf.data;
+          if (d.isolate) return hits(d.isolate, q);
+          return (d.isolates ?? []).some((s) => hits(s, q));
+        })
+        .map(polar);
+      if (pts.length) {
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+        const w = Math.max(Math.max(...xs) - Math.min(...xs), 1);
+        const h = Math.max(Math.max(...ys) - Math.min(...ys), 1);
+        const k = Math.max(0.8, Math.min(5, (SIZE * 0.55) / Math.max(w, h)));
+        const tx = C - k * (C + cx);
+        const ty = C - k * (C + cy);
+        fit = zoomIdentity.translate(tx, ty).scale(k);
+        fitSig = `${Math.round(k * 100)}:${Math.round(tx)}:${Math.round(ty)}`;
+      }
+    }
 
-  // Wire up pan + wheel/pinch zoom once.
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const sel = select(svg);
-    const z = d3zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.4, 12])
-      .on("zoom", (e) => setTransform(e.transform));
-    sel.call(z).on("dblclick.zoom", null); // keep double-clicks for nodes
-    zoomRef.current = z;
-    return () => {
-      sel.on(".zoom", null);
-    };
-  }, []);
+    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes, fit, fitSig };
+  }, [species, overrides, focus, q]);
 
-  const focusPhylum = focus
-    ? focus.startsWith("p:")
-      ? focus.slice(2)
-      : focus.slice(2, focus.indexOf("/"))
-    : null;
+  useFit(nav, fit, fitSig, q);
+
+  const still = q !== "" || !!focus || transform.k !== 1 || leaves.length > 140;
+
+  return (
+    <>
+      <TreeControls nav={nav} />
+      <svg
+        ref={svgRef}
+        className="tree__svg"
+        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        role="img"
+        aria-label="Radial taxonomic tree of logged isolates. Scroll to zoom, drag to pan."
+      >
+        <g transform={transform.toString()}>
+          <g className={`tree__content${still ? " is-still" : ""}`} transform={`translate(${C},${C})`}>
+            {hulls.map((h) => (
+              <g key={h.name} className="hull">
+                {h.path && (
+                  <path d={h.path} fill={h.color} fillOpacity={0.1} stroke={h.color} strokeOpacity={0.28} />
+                )}
+                <text
+                  className="hull__label"
+                  x={h.labelAt[0]}
+                  y={h.labelAt[1]}
+                  fill={h.color}
+                  textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
+                  onClick={() => setFocus(`p:${h.name}`)}
+                >
+                  {h.name}
+                  <title>Focus on {h.name}</title>
+                </text>
+              </g>
+            ))}
+
+            <g className="tree__links" fill="none">
+              {links.map((lk: HierarchyPointLink<TaxNode>, i) => {
+                const [sx, sy] = polar(lk.source);
+                const [tx, ty] = polar(lk.target);
+                return <path key={i} className="tree__link" d={`M${sx},${sy}L${tx},${ty}`} />;
+              })}
+            </g>
+
+            {links
+              .map((l) => l.target)
+              .filter((n) => n.data.rank === "class" && n.data.tag && n.children)
+              .map((n) => {
+                const [x, y] = polar(n);
+                return (
+                  <text
+                    key={n.data.name}
+                    className="tree__greek"
+                    x={x}
+                    y={y}
+                    textAnchor="middle"
+                    onClick={() => setFocus(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
+                  >
+                    {n.data.tag}
+                    <title>Focus on {n.data.name}</title>
+                  </text>
+                );
+              })}
+
+            {handles.map((n) => {
+              const [x, y] = polar(n);
+              return (
+                <g
+                  key={`h-${n.data.key}`}
+                  className="treehandle"
+                  transform={`translate(${x},${y})`}
+                  onClick={() => toggle(n.data.key!)}
+                >
+                  <circle r={6.5}>
+                    <title>Collapse {n.data.name}</title>
+                  </circle>
+                  <line x1={-3} y1={0} x2={3} y2={0} />
+                </g>
+              );
+            })}
+
+            {leaves.map((leaf, i) => {
+              const angleDeg = (leaf.x * 180) / Math.PI - 90;
+              const flip = leaf.x >= Math.PI;
+              const d = leaf.data;
+              const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
+              const color = phylum
+                ? colorFor(phylum.data.name)
+                : focusPhylum
+                  ? colorFor(focusPhylum)
+                  : "#5b6573";
+              const floatStyle = {
+                animationDelay: `${(i % 12) * -0.5}s`,
+                animationDuration: `${6 + (i % 5)}s`,
+              };
+
+              if (!leaf.children && d.rank !== "isolate" && d.isolates) {
+                const count = d.isolates.length;
+                const r = 7 + Math.min(count, 16) * 0.95;
+                const fill = d.rank === "phylum" ? colorFor(d.name) : color;
+                const major = d.rank === "phylum";
+                const anyHit = q !== "" && d.isolates.some((s) => hits(s, q));
+                const cls = q !== "" ? (anyHit ? " is-hit" : " is-dim") : "";
+                return (
+                  <g key={d.key} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
+                    <g className={`treenode${cls}`} style={floatStyle}>
+                      <circle
+                        className="treenode__cluster"
+                        r={r}
+                        fill={fill}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${d.name}, ${count} isolates. Activate to expand.`}
+                        onClick={() => toggle(d.key!)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggle(d.key!);
+                          }
+                        }}
+                      >
+                        <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
+                      </circle>
+                      <g transform={`rotate(${-angleDeg})`}>
+                        <text className="treenode__count" dy="0.32em" textAnchor="middle">
+                          {count}
+                        </text>
+                      </g>
+                      <text
+                        className={`treenode__label treenode__label--cluster${major ? " treenode__label--major" : ""}`}
+                        style={major ? { fill } : undefined}
+                        transform={flip ? "rotate(180)" : undefined}
+                        x={flip ? -(r + 7) : r + 7}
+                        dy="0.31em"
+                        textAnchor={flip ? "end" : "start"}
+                        onClick={() => toggle(d.key!)}
+                      >
+                        {d.rank === "genus" ? (
+                          <>
+                            <tspan fontStyle="italic">{d.name}</tspan> spp.
+                          </>
+                        ) : (
+                          d.name
+                        )}
+                      </text>
+                    </g>
+                  </g>
+                );
+              }
+
+              const s = d.isolate!;
+              const isSel = selectedId === s.id;
+              const hit = hits(s, q);
+              const cls = q !== "" ? (hit ? " is-hit" : " is-dim") : "";
+              return (
+                <g key={s.id} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
+                  <g className={`treenode${cls}`} style={floatStyle}>
+                    <circle
+                      className={`treenode__dot${isSel ? " is-sel" : ""}`}
+                      r={isSel ? 7 : 4.5}
+                      fill={color}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${binomial(s.genus, s.species)}. Activate for details.`}
+                      onClick={() => onSelect(s)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelect(s);
+                        }
+                      }}
+                    />
+                    <text
+                      className="treenode__label"
+                      transform={flip ? "rotate(180)" : undefined}
+                      x={flip ? -10 : 10}
+                      dy="0.31em"
+                      textAnchor={flip ? "end" : "start"}
+                      onClick={() => onSelect(s)}
+                    >
+                      {binomial(s.genus, s.species)}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+          </g>
+        </g>
+      </svg>
+    </>
+  );
+}
+
+function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
+  const nav = useTreeNav(species);
+  const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
+  const q = query.trim().toLowerCase();
+  const focusPhylum = phylumOf(focus);
 
   const { leaves, links, internals, handles, vbW, vbH, fit, fitSig } = useMemo(() => {
     const full = collapse(buildTaxonomy(species), "", overrides);
@@ -335,20 +694,16 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
     const allLeaves = root.leaves();
     const allLinks = root.links();
 
-    // Internal nodes that get a rank label (phylum / class / genus) drawn on the
-    // left side of the canvas, well clear of the right-edge species labels.
     const internalNodes = root
       .descendants()
       .filter(
         (n) => !!n.children && n.depth >= 1 && ["phylum", "class", "genus"].includes(n.data.rank),
       );
 
-    // Collapse handle on expanded, collapsible genera.
     const handleNodes = root
       .descendants()
       .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
 
-    // When searching, frame the matches: fit the bounding box of matched tips.
     let fit: ZoomTransform | null = null;
     let fitSig = "";
     if (q) {
@@ -358,7 +713,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
           if (d.isolate) return hits(d.isolate, q);
           return (d.isolates ?? []).some((s) => hits(s, q));
         })
-        .map((leaf) => [sx(leaf), sy(leaf)] as [number, number]);
+        .map((leaf) => [dx(leaf), dy(leaf)] as [number, number]);
       if (pts.length) {
         const xs = pts.map((p) => p[0]);
         const ys = pts.map((p) => p[1]);
@@ -388,17 +743,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
     };
   }, [species, overrides, focus, q]);
 
-  // Apply the fit-to-search transform (or reset when the search clears).
-  useEffect(() => {
-    const svg = svgRef.current;
-    const z = zoomRef.current;
-    if (!svg || !z) return;
-    const sel = select(svg);
-    if (fit) sel.call(z.transform, fit);
-    else if (q === "") sel.call(z.transform, zoomIdentity);
-  }, [fitSig, q]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const crumb = focusCrumb(focus);
+  useFit(nav, fit, fitSig, q);
 
   const phylumColor = (n: HierarchyNode<TaxNode>) => {
     const p = n.ancestors().find((a) => a.data.rank === "phylum");
@@ -407,44 +752,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
 
   return (
     <>
-      {focus && (
-        <nav className="tree__crumb" aria-label="Focused branch">
-          {crumb.map((c, i) => (
-            <span key={i} className="tree__crumb-item">
-              {i > 0 && (
-                <span className="tree__crumb-sep" aria-hidden="true">
-                  ›
-                </span>
-              )}
-              {i < crumb.length - 1 ? (
-                <button type="button" className="tree__crumb-link" onClick={() => setFocus(c.key)}>
-                  {c.label}
-                </button>
-              ) : (
-                <span className="tree__crumb-cur">{c.label}</span>
-              )}
-            </span>
-          ))}
-        </nav>
-      )}
-      <div className="tree__controls">
-        <button type="button" className="btn btn--ghost btn--sm" onClick={expandAll}>
-          Expand all
-        </button>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={collapseAll}>
-          Collapse all
-        </button>
-        {(transform.k !== 1 || transform.x !== 0 || transform.y !== 0) && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetView}>
-            Reset view
-          </button>
-        )}
-        {(overrides.size > 0 || focus) && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetLayout}>
-            Reset layout
-          </button>
-        )}
-      </div>
+      <TreeControls nav={nav} />
       <svg
         ref={svgRef}
         className="tree__svg"
@@ -454,18 +762,16 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
         aria-label="Dendrogram of logged isolates. Scroll to zoom, drag to pan."
       >
         <g transform={transform.toString()}>
-          {/* branches */}
           <g className="tree__links" fill="none">
             {links.map((lk, i) => {
-              const x1 = sx(lk.source);
-              const y1 = sy(lk.source);
-              const x2 = sx(lk.target);
-              const y2 = sy(lk.target);
+              const x1 = dx(lk.source);
+              const y1 = dy(lk.source);
+              const x2 = dx(lk.target);
+              const y2 = dy(lk.target);
               return <path key={i} className="tree__link" d={`M${x1},${y1}L${x1},${y2}L${x2},${y2}`} />;
             })}
           </g>
 
-          {/* rank labels on internal nodes (phylum / class / genus) */}
           {internals.map((n) => {
             const d = n.data;
             const isPhylum = d.rank === "phylum";
@@ -473,19 +779,15 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
             const color = isPhylum ? colorFor(d.name) : phylumColor(n);
             const onClickNode = () =>
               isPhylum || isClass
-                ? setFocus(
-                    isPhylum
-                      ? `p:${d.name}`
-                      : `c:${n.parent?.data.name ?? ""}/${d.name}`,
-                  )
-                : toggle(d.key ?? keyOf(d, n.parent?.data.name ?? "") ?? "");
+                ? setFocus(isPhylum ? `p:${d.name}` : `c:${n.parent?.data.name ?? ""}/${d.name}`)
+                : toggle(d.key!);
             return (
-              <g key={`${d.rank}-${sx(n)}-${sy(n)}`} className="dendlabel" onClick={onClickNode}>
-                <circle className="dendlabel__dot" cx={sx(n)} cy={sy(n)} r={3.2} fill={color} />
+              <g key={`${d.rank}-${dx(n)}-${dy(n)}`} className="dendlabel" onClick={onClickNode}>
+                <circle className="dendlabel__dot" cx={dx(n)} cy={dy(n)} r={3.2} fill={color} />
                 <text
                   className={`dendlabel__text dendlabel__text--${d.rank}`}
-                  x={sx(n) + 6}
-                  y={sy(n) - 5}
+                  x={dx(n) + 6}
+                  y={dy(n) - 5}
                   fill={isPhylum ? color : undefined}
                 >
                   {isClass && d.tag ? `${d.tag} ${d.name}` : d.name}
@@ -498,12 +800,11 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
             );
           })}
 
-          {/* collapse handles on expanded genera */}
           {handles.map((n) => (
             <g
               key={`h-${n.data.key}`}
               className="treehandle"
-              transform={`translate(${sx(n)},${sy(n)})`}
+              transform={`translate(${dx(n)},${dy(n)})`}
               onClick={() => toggle(n.data.key!)}
             >
               <circle r={6}>
@@ -513,14 +814,12 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
             </g>
           ))}
 
-          {/* tips: isolates and collapsed blobs */}
           {leaves.map((leaf) => {
             const d = leaf.data;
             const color = phylumColor(leaf);
-            const x = sx(leaf);
-            const y = sy(leaf);
+            const x = dx(leaf);
+            const y = dy(leaf);
 
-            // Collapsed genus/class/phylum — a counted blob.
             if (!leaf.children && d.rank !== "isolate" && d.isolates) {
               const count = d.isolates.length;
               const r = 5 + Math.min(count, 14) * 0.7;
@@ -557,7 +856,6 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
               );
             }
 
-            // Individual isolate tip.
             const s = d.isolate!;
             const isSel = selectedId === s.id;
             const hit = hits(s, q);
@@ -581,13 +879,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
                     }
                   }}
                 />
-                <text
-                  className="treenode__label"
-                  x={x + 9}
-                  y={y}
-                  dy="0.31em"
-                  onClick={() => onSelect(s)}
-                >
+                <text className="treenode__label" x={x + 9} y={y} dy="0.31em" onClick={() => onSelect(s)}>
                   {binomial(s.genus, s.species)}
                 </text>
               </g>

@@ -6,7 +6,7 @@ import {
   type HierarchyPointLink,
 } from "d3-hierarchy";
 import { polygonHull, polygonCentroid } from "d3-polygon";
-import { buildTaxonomy, type TaxNode } from "../lib/taxonomy";
+import { buildTaxonomy, modernPhylum, type TaxNode } from "../lib/taxonomy";
 import { binomial } from "../lib/format";
 import { CATEGORIES } from "../data/categories";
 import type { Species } from "../types";
@@ -354,6 +354,11 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
             <h3 className="treedetail__name">
               <em>{binomial(selected.genus, selected.species)}</em>
             </h3>
+            {selected.old_name && (
+              <p className="treedetail__syn">
+                syn. <em>{selected.old_name}</em>
+              </p>
+            )}
             <Lineagecrumb species={selected} />
             <Readout species={selected} />
             <button className="btn btn--ghost treedetail__edit" onClick={() => onEdit(selected)}>
@@ -388,7 +393,9 @@ function Lineagecrumb({ species }: { species: Species }) {
   if (!lin || lin.matchType === "NONE") {
     return <p className="treedetail__crumb treedetail__crumb--none">No GBIF lineage — grouped by Gram.</p>;
   }
-  const parts = [lin.phylum, lin.class, lin.order, lin.family, lin.genus].filter(Boolean);
+  const parts = [modernPhylum(lin.phylum), lin.class, lin.order, lin.family, lin.genus].filter(
+    Boolean,
+  );
   return (
     <p className="treedetail__crumb">
       {parts.map((p, i) => (

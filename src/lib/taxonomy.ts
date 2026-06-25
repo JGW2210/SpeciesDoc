@@ -23,6 +23,38 @@ const GREEK: Record<string, string> = {
   Zetaproteobacteria: "ζ",
 };
 
+// GBIF's backbone still uses pre-2021 phylum names; map them to the current,
+// validly published equivalents for display.
+const MODERN_PHYLUM: Record<string, string> = {
+  Actinobacteria: "Actinomycetota",
+  Actinobacteriota: "Actinomycetota",
+  Firmicutes: "Bacillota",
+  Proteobacteria: "Pseudomonadota",
+  Bacteroidetes: "Bacteroidota",
+  Chlamydiae: "Chlamydiota",
+  Spirochaetes: "Spirochaetota",
+  Cyanobacteria: "Cyanobacteriota",
+  Tenericutes: "Mycoplasmatota",
+  Fusobacteria: "Fusobacteriota",
+  "Deinococcus-Thermus": "Deinococcota",
+  Chloroflexi: "Chloroflexota",
+  Verrucomicrobia: "Verrucomicrobiota",
+  Planctomycetes: "Planctomycetota",
+  Acidobacteria: "Acidobacteriota",
+  Aquificae: "Aquificota",
+  Thermotogae: "Thermotogota",
+  Synergistetes: "Synergistota",
+  Gemmatimonadetes: "Gemmatimonadota",
+  Nitrospirae: "Nitrospirota",
+  Epsilonbacteraeota: "Campylobacterota",
+  Fibrobacteres: "Fibrobacterota",
+};
+
+export function modernPhylum(name: string | null | undefined): string {
+  if (!name) return "Other bacteria";
+  return MODERN_PHYLUM[name] ?? name;
+}
+
 // Build the topology phylum → (class, only for Proteobacteria) → genus → isolate.
 // Order/family are intentionally skipped to keep the radial tree readable like
 // the reference figure; the full lineage is still shown in the detail panel.
@@ -44,12 +76,13 @@ export function buildTaxonomy(species: Species[]): TaxNode {
     let node = root;
 
     if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
-      const phylum = lin.phylum ?? "Other bacteria";
-      node = child(node, phylum, "phylum");
+      node = child(node, modernPhylum(lin.phylum), "phylum");
       if (lin.class && GREEK[lin.class]) {
         node = child(node, lin.class, "class", GREEK[lin.class]);
       }
-      node = child(node, lin.genus ?? s.genus, "genus");
+      // Use the entered (current) genus so the tree shows modern names, even when
+      // GBIF placed the isolate via an old synonym.
+      node = child(node, s.genus, "genus");
     } else {
       // No lineage yet: fall back to a Gram-based grouping so the isolate still
       // appears on the tree.

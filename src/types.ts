@@ -17,6 +17,7 @@ export interface Species {
   created_at: string;
   genus: string;
   species: string;
+  old_name: string | null; // optional synonym / former name, used for lineage fallback
   lineage: Lineage | null;
   gram: string | null;
   oxidase: string | null;
@@ -43,5 +44,5 @@ export interface Species {
 // Everything the form collects and writes (lineage is fetched, not entered).
 export type SpeciesDraft = Omit<Species, "id" | "created_at" | "lineage">;
 
-// The set of test-result column keys (excludes genus/species).
-export type TestKey = Exclude<keyof SpeciesDraft, "genus" | "species">;
+// The set of test-result column keys (excludes the name fields).
+export type TestKey = Exclude<keyof SpeciesDraft, "genus" | "species" | "old_name">;

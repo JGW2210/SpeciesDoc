@@ -19,6 +19,7 @@ create table if not exists public.species (
 
   -- biochemical / morphological test panel
   gram              text,
+  afb               text,
   oxidase           text,
   catalase          text,
   indole            text,

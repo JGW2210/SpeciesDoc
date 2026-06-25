@@ -20,6 +20,7 @@ export interface Species {
   old_name: string | null; // optional synonym / former name, used for lineage fallback
   lineage: Lineage | null;
   gram: string | null;
+  afb: string | null;
   oxidase: string | null;
   catalase: string | null;
   indole: string | null;

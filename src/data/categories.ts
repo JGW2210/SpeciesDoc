@@ -46,6 +46,18 @@ export const CATEGORIES: Category[] = [
     ],
     hint: "Crystal violet retained = positive.",
   },
+  {
+    key: "afb",
+    label: "Acid-fast bacilli",
+    short: "AFB",
+    type: "sign",
+    options: [
+      { value: "Positive", label: "+", title: "Acid-fast" },
+      { value: "Negative", label: "−", title: "Non-acid-fast" },
+      { value: "Variable", label: "v", title: "Partially acid-fast / variable" },
+    ],
+    hint: "Ziehl-Neelsen / auramine.",
+  },
   { key: "oxidase", label: "Oxidase", short: "Ox", type: "sign", options: SIGN },
   { key: "catalase", label: "Catalase", short: "Cat", type: "sign", options: SIGN },
   { key: "indole", label: "Indole", short: "Ind", type: "sign", options: SIGN },
@@ -168,9 +180,14 @@ export interface CategoryGroup {
 
 export const CATEGORY_GROUPS: CategoryGroup[] = [
   {
+    name: "Staining",
+    defaultOpen: true,
+    keys: ["gram", "afb"],
+  },
+  {
     name: "Microscopy & morphology",
     defaultOpen: true,
-    keys: ["gram", "distinctive_shape", "motility", "spores"],
+    keys: ["distinctive_shape", "motility", "spores"],
   },
   {
     name: "Key enzymes",

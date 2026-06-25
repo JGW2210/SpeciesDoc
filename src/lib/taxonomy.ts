@@ -115,7 +115,9 @@ export function buildTaxonomy(species: Species[]): TaxNode {
           ? "Unplaced · Gram-positive"
           : g === "negative"
             ? "Unplaced · Gram-negative"
-            : "Unplaced";
+            : g === "acidfast"
+              ? "Unplaced · Acid-fast"
+              : "Unplaced";
       node = child(node, label, "phylum");
       node = child(node, s.genus, "genus");
     }

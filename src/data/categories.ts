@@ -36,27 +36,16 @@ const SIGN: QuickOption[] = [
 export const CATEGORIES: Category[] = [
   {
     key: "gram",
-    label: "Gram",
-    short: "Gram",
+    label: "Staining",
+    short: "Stain",
     type: "gram",
     options: [
       { value: "Positive", label: "Gram +", title: "Gram positive" },
       { value: "Negative", label: "Gram −", title: "Gram negative" },
       { value: "Variable", label: "Variable", title: "Gram variable" },
+      { value: "Acid-fast", label: "AFB", title: "Acid-fast — needs auramine / Ziehl-Neelsen; doesn't Gram-stain" },
     ],
-    hint: "Crystal violet retained = positive.",
-  },
-  {
-    key: "afb",
-    label: "Acid-fast bacilli",
-    short: "AFB",
-    type: "sign",
-    options: [
-      { value: "Positive", label: "+", title: "Acid-fast" },
-      { value: "Negative", label: "−", title: "Non-acid-fast" },
-      { value: "Variable", label: "v", title: "Partially acid-fast / variable" },
-    ],
-    hint: "Ziehl-Neelsen / auramine.",
+    hint: "Crystal violet retained = positive; acid-fast organisms need auramine / Ziehl-Neelsen.",
   },
   { key: "oxidase", label: "Oxidase", short: "Ox", type: "sign", options: SIGN },
   { key: "catalase", label: "Catalase", short: "Cat", type: "sign", options: SIGN },
@@ -182,7 +171,7 @@ export const CATEGORY_GROUPS: CategoryGroup[] = [
   {
     name: "Staining",
     defaultOpen: true,
-    keys: ["gram", "afb"],
+    keys: ["gram"],
   },
   {
     name: "Microscopy & morphology",

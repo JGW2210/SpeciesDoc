@@ -59,3 +59,22 @@ create policy "Public full access to species"
   to anon
   using (true)
   with check (true);
+
+-- Custom board layout (one row) -------------------------------------------
+-- Holds the user-defined categories/subcategories arrangement for the Board view.
+
+create table if not exists public.board (
+  id         text primary key,
+  data       jsonb not null default '{"categories":[]}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.board enable row level security;
+
+drop policy if exists "Public full access to board" on public.board;
+create policy "Public full access to board"
+  on public.board
+  for all
+  to anon
+  using (true)
+  with check (true);

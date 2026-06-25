@@ -24,6 +24,11 @@ Built with **Vite + React + TypeScript** and **Supabase** for storage.
   clickable tips. Lineage is fetched from the free **GBIF** backbone taxonomy on
   save and cached; a "Fetch lineage" button backfills existing rows. Branches
   encode taxonomic rank, not evolutionary distance.
+- Modern names are primary and shown on the tree; phylum names are modernised
+  for display (e.g. Actinobacteriota → Actinomycetota). An optional **old name /
+  synonym** can be recorded per isolate — it's used as a fallback for the GBIF
+  lookup (whose backbone often only knows the former name) and shown on the
+  tree's detail card.
 
 ## Setup
 

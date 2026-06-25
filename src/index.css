@@ -364,13 +364,21 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0; /* allow the input to shrink inside the grid instead of overflowing */
+}
+.field--wide {
+  margin-bottom: 18px;
+}
+.field__hint {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin: 2px 0 0;
 }
 .field__label {
   font-size: 0.72rem;
@@ -1524,7 +1532,16 @@ textarea {
 .treedetail__name {
   font-family: var(--font-mono);
   font-size: 1.02rem;
-  margin: 0 22px 8px 0;
+  margin: 0 22px 6px 0;
+}
+.treedetail__syn {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.treedetail__syn em {
+  font-family: var(--font-mono);
+  font-style: italic;
 }
 .treedetail__name em {
   font-style: italic;

@@ -12,6 +12,7 @@ create table if not exists public.species (
   -- binomial name
   genus             text not null,
   species           text not null,
+  old_name          text, -- optional synonym / former name (lineage fallback)
 
   -- cached GBIF taxonomic lineage (for the tree view)
   lineage           jsonb,

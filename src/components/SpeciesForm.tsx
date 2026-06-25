@@ -25,6 +25,7 @@ function groupOptions(options: QuickOption[]): [string, QuickOption[]][] {
 const EMPTY: SpeciesDraft = {
   genus: "",
   species: "",
+  old_name: null,
   gram: null,
   oxidase: null,
   catalase: null,
@@ -167,6 +168,21 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
           />
         </label>
       </div>
+
+      <label className="field field--wide">
+        <span className="field__label">Old name / synonym (optional)</span>
+        <input
+          className="field__input"
+          value={draft.old_name ?? ""}
+          onChange={(e) => set("old_name", e.target.value === "" ? null : e.target.value)}
+          placeholder="e.g. Actinomyces odontolyticus"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <span className="field__hint">
+          Used to fetch lineage if the current name isn’t found, and shown on the tree card.
+        </span>
+      </label>
 
       <div className="form__panel">
         <div className="form__panel-bar">

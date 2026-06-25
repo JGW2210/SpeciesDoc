@@ -49,7 +49,7 @@ export default function App() {
   // never blocks the core save.
   const enrichOne = useCallback(async (s: Species) => {
     if (!supabase) return;
-    const lineage = await fetchLineage(s.genus, s.species);
+    const lineage = await fetchLineage(s.genus, s.species, s.old_name);
     if (!lineage) return;
     const { data, error } = await supabase
       .from("species")

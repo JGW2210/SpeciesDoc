@@ -247,6 +247,18 @@ textarea {
     padding-bottom: 88px;
   }
 
+  /* the tree toolbar stacks so the search + layout toggle stay usable */
+  .tree__bar {
+    flex-direction: column;
+  }
+  .tree__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .tree__actions .list__search {
+    flex: 1 1 auto;
+  }
+
   /* The entry form becomes a slide-up sheet toggled from the bottom bar. */
   .layout__form {
     position: fixed;
@@ -1377,7 +1389,41 @@ textarea {
   display: flex;
   gap: 8px;
   flex: none;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
+
+/* Radial / Outline layout toggle */
+.treetoggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.treetoggle__btn {
+  border: none;
+  background: transparent;
+  padding: 7px 13px;
+  font-size: 0.84rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.treetoggle__btn:last-child {
+  border-right: none;
+}
+.treetoggle__btn:hover {
+  background: #eef1f4;
+}
+.treetoggle__btn.is-on {
+  background: var(--accent);
+  color: #fff;
+}
+
 .tree__stage {
   position: relative;
   border: 1px solid var(--border);
@@ -1386,6 +1432,128 @@ textarea {
     radial-gradient(circle at 50% 48%, #ffffff 0%, var(--surface-2) 78%);
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+.tree__stage--outline {
+  background: var(--surface);
+}
+/* floating per-layout controls (e.g. Reset layout), top-left of the stage */
+.tree__controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+.btn--sm {
+  padding: 5px 11px;
+  font-size: 0.8rem;
+}
+
+/* matches/dimming when searching the radial tree */
+.treenode.is-dim {
+  opacity: 0.13;
+  transition: opacity 0.18s;
+}
+.treenode.is-hit .treenode__dot {
+  stroke: var(--accent);
+  stroke-width: 2.5px;
+}
+.treenode.is-hit .treenode__label {
+  fill: var(--accent-deep);
+  font-weight: 700;
+}
+
+/* ----------------------------------------------------------- outline view --- */
+.outline {
+  max-height: min(72vh, 760px);
+  overflow: auto;
+  padding: 8px 6px;
+  font-size: 0.9rem;
+}
+.outline__toggle,
+.outline__leaf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px 12px;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.outline__toggle:hover,
+.outline__leaf:hover {
+  background: var(--surface-2);
+}
+.outline__toggle:disabled {
+  cursor: default;
+}
+.outline__chev {
+  flex: none;
+  width: 0.9em;
+  color: var(--muted);
+  transition: transform 0.14s;
+}
+.outline__chev.is-open {
+  transform: rotate(90deg);
+}
+.outline__tag {
+  flex: none;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+.outline__name {
+  font-weight: 550;
+}
+.outline__toggle--phylum .outline__name {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.outline__rank {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 500;
+}
+.outline__count {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.outline__leaf {
+  color: var(--ink-soft);
+}
+.outline__leaf em {
+  font-style: italic;
+}
+.outline__leaf.is-sel {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.outline__bullet {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+.outline__leaf.is-sel .outline__bullet {
+  background: var(--accent);
+}
+.outline__none {
+  padding: 24px 14px;
+  color: var(--muted);
+  text-align: center;
 }
 .tree__svg {
   display: block;

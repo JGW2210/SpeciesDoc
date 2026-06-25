@@ -213,6 +213,14 @@ export function buildTaxonomy(species: Species[]): TaxNode {
   return root;
 }
 
+// Every isolate beneath a node (the node itself if it is an isolate leaf).
+export function gatherIsolates(node: TaxNode): Species[] {
+  if (node.isolate) return [node.isolate];
+  const out: Species[] = [];
+  for (const c of node.children ?? []) out.push(...gatherIsolates(c));
+  return out;
+}
+
 // How many isolates have a real (matched) lineage vs. need a GBIF lookup.
 export function lineageStats(species: Species[]): { matched: number; missing: number } {
   let matched = 0;

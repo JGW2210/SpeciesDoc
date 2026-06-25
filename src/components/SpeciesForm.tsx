@@ -314,7 +314,9 @@ function Field({ cat, value, onSelect, onText }: FieldProps) {
   const isText = cat.type === "text" || cat.type === "textarea";
   const isChoice = cat.type === "choice";
   const isSeg = !isText && !isChoice && !!cat.options;
-  const wide = cat.type === "textarea" || isChoice;
+  // Staining now has four options (incl. Acid-fast); give it the full row so
+  // every segment fits instead of clipping the last one.
+  const wide = cat.type === "textarea" || isChoice || cat.type === "gram";
   // Choice fields (e.g. Motility) are large, so they collapse on their own and
   // start closed — the chosen value stays visible in the header.
   const [choiceOpen, setChoiceOpen] = useState(false);

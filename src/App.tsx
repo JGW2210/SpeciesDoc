@@ -181,6 +181,8 @@ export default function App() {
             <SpeciesForm
               onSubmit={handleSubmit}
               editing={editing}
+              species={species}
+              onEditExisting={handleEdit}
               onCancelEdit={closeForm}
               disabled={!isSupabaseConfigured}
             />

@@ -2025,3 +2025,31 @@ textarea {
 .csub__head.is-drop {
   box-shadow: inset 0 3px 0 var(--accent);
 }
+
+/* duplicate-name warning in the entry form */
+.form__dupe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 16px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--var-soft);
+  border: 1px solid #e6d2a8;
+  color: #7a5a12;
+  font-size: 0.84rem;
+}
+.form__dupe em {
+  font-family: var(--font-mono);
+  font-style: italic;
+}
+.form__dupe-edit {
+  border: none;
+  background: none;
+  color: var(--accent-deep);
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  padding: 0;
+}

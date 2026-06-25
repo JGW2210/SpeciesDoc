@@ -50,7 +50,6 @@ export default function SpeciesCard({
           <em>{binomial(species.genus, species.species)}</em>
         </h3>
         <div className="card__meta">
-          {open && <time dateTime={species.created_at}>{logged}</time>}
           {confirming ? (
             <span className="card__confirm">
               <button className="linkbtn linkbtn--danger" onClick={() => onDelete(species.id)}>
@@ -92,6 +91,9 @@ export default function SpeciesCard({
               <p>{notes}</p>
             </details>
           )}
+          <div className="card__foot">
+            <time dateTime={species.created_at}>{logged}</time>
+          </div>
         </>
       )}
     </article>

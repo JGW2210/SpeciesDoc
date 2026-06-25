@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   hierarchy,
   cluster,
+  type HierarchyNode,
   type HierarchyPointNode,
-  type HierarchyPointLink,
 } from "d3-hierarchy";
-import { polygonHull, polygonCentroid } from "d3-polygon";
 import { select } from "d3-selection";
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import {
@@ -20,10 +19,14 @@ import { CATEGORIES } from "../data/categories";
 import OutlineTree from "./OutlineTree";
 import type { Species } from "../types";
 
-const SIZE = 1000;
-const C = SIZE / 2;
-const RADIUS = 332; // radius of the leaf ring
-const HULL_PAD = 30;
+// Horizontal dendrogram geometry (a rectangular cladogram: root at the left,
+// ranks fanning out to the right, species labels down the right edge).
+const ROW_H = 17; // vertical spacing between leaves
+const COL_W = 156; // horizontal spacing between ranks
+const PAD_LEFT = 30;
+const PAD_TOP = 24;
+const PAD_BOT = 24;
+const LABEL_W = 300; // right margin reserved for species labels
 const COLLAPSE_MIN = 3; // genera with this many isolates auto-collapse into one node
 
 const PHYLUM_COLORS = [
@@ -44,11 +47,9 @@ function colorFor(name: string): string {
   return PHYLUM_COLORS[h % PHYLUM_COLORS.length];
 }
 
-// Polar (angle from d3 cluster, radius) → cartesian, centre at origin.
-function pos(node: HierarchyPointNode<TaxNode>): [number, number] {
-  const a = node.x - Math.PI / 2;
-  return [node.y * Math.cos(a), node.y * Math.sin(a)];
-}
+// Cartesian projection: depth (node.y) → x, breadth (node.x) → y.
+const sx = (n: HierarchyPointNode<TaxNode>) => n.y + PAD_LEFT;
+const sy = (n: HierarchyPointNode<TaxNode>) => n.x + PAD_TOP;
 
 // Stable collapse key per collapsible node (rank-prefixed to avoid clashes).
 function keyOf(node: TaxNode, phylum: string): string | null {
@@ -124,10 +125,8 @@ function focusCrumb(focus: string | null): { label: string; key: string | null }
   } else if (focus.startsWith("c:")) {
     const rest = focus.slice(2); // phylum/Class
     const slash = rest.indexOf("/");
-    const phylum = rest.slice(0, slash);
-    const cls = rest.slice(slash + 1);
-    trail.push({ label: phylum, key: `p:${phylum}` });
-    trail.push({ label: cls, key: focus });
+    trail.push({ label: rest.slice(0, slash), key: `p:${rest.slice(0, slash)}` });
+    trail.push({ label: rest.slice(slash + 1), key: focus });
   }
   return trail;
 }
@@ -140,7 +139,7 @@ interface TreeViewProps {
 }
 
 export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
-  const [mode, setMode] = useState<"radial" | "outline">("radial");
+  const [mode, setMode] = useState<"dendro" | "outline">("dendro");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Species | null>(null);
 
@@ -177,11 +176,11 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
           <div className="treetoggle" role="group" aria-label="Tree layout">
             <button
               type="button"
-              className={`treetoggle__btn${mode === "radial" ? " is-on" : ""}`}
-              aria-pressed={mode === "radial"}
-              onClick={() => setMode("radial")}
+              className={`treetoggle__btn${mode === "dendro" ? " is-on" : ""}`}
+              aria-pressed={mode === "dendro"}
+              onClick={() => setMode("dendro")}
             >
-              Radial
+              Dendrogram
             </button>
             <button
               type="button"
@@ -205,8 +204,8 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
       </div>
 
       <div className={`tree__stage tree__stage--${mode}`}>
-        {mode === "radial" ? (
-          <RadialTree
+        {mode === "dendro" ? (
+          <Dendrogram
             species={species}
             query={query}
             selectedId={selected?.id ?? null}
@@ -263,14 +262,14 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
   );
 }
 
-interface RadialTreeProps {
+interface DendrogramProps {
   species: Species[];
   query: string;
   selectedId: string | null;
   onSelect: (s: Species) => void;
 }
 
-function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
+function Dendrogram({ species, query, selectedId, onSelect }: DendrogramProps) {
   const [overrides, setOverrides] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<string | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
@@ -304,7 +303,7 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
     if (!svg) return;
     const sel = select(svg);
     const z = d3zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.6, 10])
+      .scaleExtent([0.4, 12])
       .on("zoom", (e) => setTransform(e.transform));
     sel.call(z).on("dblclick.zoom", null); // keep double-clicks for nodes
     zoomRef.current = z;
@@ -319,53 +318,35 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
       : focus.slice(2, focus.indexOf("/"))
     : null;
 
-  const { leaves, links, hulls, handles, fit, fitSig } = useMemo(() => {
+  const { leaves, links, internals, handles, vbW, vbH, fit, fitSig } = useMemo(() => {
     const full = collapse(buildTaxonomy(species), "", overrides);
     const rootData = focus ? findByKey(full, "", focus) ?? full : full;
-    const focused = rootData !== full;
-    const root = cluster<TaxNode>()
-      .size([2 * Math.PI, RADIUS])
-      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(rootData));
+
+    const hroot = hierarchy(rootData);
+    const leafCount = hroot.leaves().length;
+    let maxDepth = 1;
+    hroot.each((n) => {
+      if (n.depth > maxDepth) maxDepth = n.depth;
+    });
+    const H = Math.max((leafCount - 1) * ROW_H, 80);
+    const W = maxDepth * COL_W;
+    const root = cluster<TaxNode>().size([H, W]).separation(() => 1)(hroot);
 
     const allLeaves = root.leaves();
     const allLinks = root.links();
 
-    // Collapse handle only on expanded genera (phyla/classes collapse via their
-    // hull label / greek tag instead, to avoid overlapping controls near centre).
+    // Internal nodes that get a rank label (phylum / class / genus) drawn on the
+    // left side of the canvas, well clear of the right-edge species labels.
+    const internalNodes = root
+      .descendants()
+      .filter(
+        (n) => !!n.children && n.depth >= 1 && ["phylum", "class", "genus"].includes(n.data.rank),
+      );
+
+    // Collapse handle on expanded, collapsible genera.
     const handleNodes = root
       .descendants()
       .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
-
-    // One hull per *expanded* phylum (skip collapsed phyla, which are single
-    // nodes; and skip all hulls when focused into a single branch).
-    const phyla = focused ? [] : (root.children ?? []).filter((p) => !!p.children);
-    const hullShapes = phyla.map((p) => {
-      const pts = p.leaves().map(pos);
-      pts.push(pos(p));
-      const color = colorFor(p.data.name);
-      const hull = pts.length >= 3 ? polygonHull(pts as [number, number][]) : null;
-
-      let path: string;
-      let labelAt: [number, number];
-      if (hull) {
-        const [cx, cy] = polygonCentroid(hull);
-        const padded = hull.map(([x, y]) => {
-          const dx = x - cx;
-          const dy = y - cy;
-          const len = Math.hypot(dx, dy) || 1;
-          return [x + (dx / len) * HULL_PAD, y + (dy / len) * HULL_PAD] as [number, number];
-        });
-        path = "M" + padded.map((q2) => q2.join(",")).join("L") + "Z";
-        labelAt = padded.reduce((far, q2) => (Math.hypot(...q2) > Math.hypot(...far) ? q2 : far), padded[0]);
-      } else {
-        // Too few points for a hull — don't draw a stray circle, just label it.
-        const cx = pts.reduce((s, q2) => s + q2[0], 0) / pts.length;
-        const cy = pts.reduce((s, q2) => s + q2[1], 0) / pts.length;
-        path = "";
-        labelAt = [cx, cy < 0 ? cy - 14 : cy + 14];
-      }
-      return { name: p.data.name, color, path, labelAt };
-    });
 
     // When searching, frame the matches: fit the bounding box of matched tips.
     let fit: ZoomTransform | null = null;
@@ -377,23 +358,34 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
           if (d.isolate) return hits(d.isolate, q);
           return (d.isolates ?? []).some((s) => hits(s, q));
         })
-        .map(pos);
+        .map((leaf) => [sx(leaf), sy(leaf)] as [number, number]);
       if (pts.length) {
         const xs = pts.map((p) => p[0]);
         const ys = pts.map((p) => p[1]);
         const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
         const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-        const w = Math.max(Math.max(...xs) - Math.min(...xs), 1);
-        const h = Math.max(Math.max(...ys) - Math.min(...ys), 1);
-        const k = Math.max(0.8, Math.min(5, (SIZE * 0.55) / Math.max(w, h)));
-        const tx = C - k * (C + cx);
-        const ty = C - k * (C + cy);
+        const w = Math.max(Math.max(...xs) - Math.min(...xs), 1) + LABEL_W;
+        const h = Math.max(Math.max(...ys) - Math.min(...ys), 1) + 80;
+        const vw = PAD_LEFT + W + LABEL_W;
+        const vh = H + PAD_TOP + PAD_BOT;
+        const k = Math.max(0.5, Math.min(6, Math.min(vw / w, vh / h)));
+        const tx = vw / 2 - k * cx;
+        const ty = vh / 2 - k * cy;
         fit = zoomIdentity.translate(tx, ty).scale(k);
         fitSig = `${Math.round(k * 100)}:${Math.round(tx)}:${Math.round(ty)}`;
       }
     }
 
-    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes, fit, fitSig };
+    return {
+      leaves: allLeaves,
+      links: allLinks,
+      internals: internalNodes,
+      handles: handleNodes,
+      vbW: PAD_LEFT + W + LABEL_W,
+      vbH: H + PAD_TOP + PAD_BOT,
+      fit,
+      fitSig,
+    };
   }, [species, overrides, focus, q]);
 
   // Apply the fit-to-search transform (or reset when the search clears).
@@ -406,10 +398,12 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
     else if (q === "") sel.call(z.transform, zoomIdentity);
   }, [fitSig, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Hold the gentle float still while the user is reading/interacting, and on
-  // big trees where lots of motion is distracting.
-  const still = q !== "" || !!focus || transform.k !== 1 || leaves.length > 140;
   const crumb = focusCrumb(focus);
+
+  const phylumColor = (n: HierarchyNode<TaxNode>) => {
+    const p = n.ancestors().find((a) => a.data.rank === "phylum");
+    return p ? colorFor(p.data.name) : focusPhylum ? colorFor(focusPhylum) : "#5b6573";
+  };
 
   return (
     <>
@@ -417,7 +411,11 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
         <nav className="tree__crumb" aria-label="Focused branch">
           {crumb.map((c, i) => (
             <span key={i} className="tree__crumb-item">
-              {i > 0 && <span className="tree__crumb-sep" aria-hidden="true">›</span>}
+              {i > 0 && (
+                <span className="tree__crumb-sep" aria-hidden="true">
+                  ›
+                </span>
+              )}
               {i < crumb.length - 1 ? (
                 <button type="button" className="tree__crumb-link" onClick={() => setFocus(c.key)}>
                   {c.label}
@@ -450,145 +448,111 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
       <svg
         ref={svgRef}
         className="tree__svg"
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        viewBox={`0 0 ${vbW} ${vbH}`}
+        preserveAspectRatio="xMinYMid meet"
         role="img"
-        aria-label="Radial taxonomic tree of logged isolates. Scroll to zoom, drag to pan."
+        aria-label="Dendrogram of logged isolates. Scroll to zoom, drag to pan."
       >
         <g transform={transform.toString()}>
-          <g className={`tree__content${still ? " is-still" : ""}`} transform={`translate(${C},${C})`}>
-          {hulls.map((h) => (
-            <g key={h.name} className="hull">
-              {h.path && (
-                <path d={h.path} fill={h.color} fillOpacity={0.1} stroke={h.color} strokeOpacity={0.28} />
-              )}
-              <text
-                className="hull__label"
-                x={h.labelAt[0]}
-                y={h.labelAt[1]}
-                fill={h.color}
-                textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
-                onClick={() => setFocus(`p:${h.name}`)}
-              >
-                {h.name}
-                <title>Focus on {h.name}</title>
-              </text>
-            </g>
-          ))}
-
+          {/* branches */}
           <g className="tree__links" fill="none">
-            {links.map((lk: HierarchyPointLink<TaxNode>, i) => {
-              const [sx, sy] = pos(lk.source);
-              const [tx, ty] = pos(lk.target);
-              return <path key={i} className="tree__link" d={`M${sx},${sy}L${tx},${ty}`} />;
+            {links.map((lk, i) => {
+              const x1 = sx(lk.source);
+              const y1 = sy(lk.source);
+              const x2 = sx(lk.target);
+              const y2 = sy(lk.target);
+              return <path key={i} className="tree__link" d={`M${x1},${y1}L${x1},${y2}L${x2},${y2}`} />;
             })}
           </g>
 
-          {links
-            .map((l) => l.target)
-            .filter((n) => n.data.rank === "class" && n.data.tag && n.children)
-            .map((n) => {
-              const [x, y] = pos(n);
-              return (
-                <text
-                  key={n.data.name}
-                  className="tree__greek"
-                  x={x}
-                  y={y}
-                  textAnchor="middle"
-                  onClick={() => setFocus(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
-                >
-                  {n.data.tag}
-                  <title>Focus on {n.data.name}</title>
-                </text>
-              );
-            })}
-
-          {/* collapse handles on expanded, collapsible nodes */}
-          {handles.map((n) => {
-            const [x, y] = pos(n);
+          {/* rank labels on internal nodes (phylum / class / genus) */}
+          {internals.map((n) => {
+            const d = n.data;
+            const isPhylum = d.rank === "phylum";
+            const isClass = d.rank === "class";
+            const color = isPhylum ? colorFor(d.name) : phylumColor(n);
+            const onClickNode = () =>
+              isPhylum || isClass
+                ? setFocus(
+                    isPhylum
+                      ? `p:${d.name}`
+                      : `c:${n.parent?.data.name ?? ""}/${d.name}`,
+                  )
+                : toggle(d.key ?? keyOf(d, n.parent?.data.name ?? "") ?? "");
             return (
-              <g
-                key={`h-${n.data.key}`}
-                className="treehandle"
-                transform={`translate(${x},${y})`}
-                onClick={() => toggle(n.data.key!)}
-              >
-                <circle r={6.5}>
-                  <title>Collapse {n.data.name}</title>
-                </circle>
-                <line x1={-3} y1={0} x2={3} y2={0} />
+              <g key={`${d.rank}-${sx(n)}-${sy(n)}`} className="dendlabel" onClick={onClickNode}>
+                <circle className="dendlabel__dot" cx={sx(n)} cy={sy(n)} r={3.2} fill={color} />
+                <text
+                  className={`dendlabel__text dendlabel__text--${d.rank}`}
+                  x={sx(n) + 6}
+                  y={sy(n) - 5}
+                  fill={isPhylum ? color : undefined}
+                >
+                  {isClass && d.tag ? `${d.tag} ${d.name}` : d.name}
+                  <title>
+                    {isPhylum || isClass ? "Focus on " : "Collapse "}
+                    {d.name}
+                  </title>
+                </text>
               </g>
             );
           })}
 
-          {/* tips: isolates and collapsed nodes */}
-          {leaves.map((leaf, i) => {
-            const angleDeg = (leaf.x * 180) / Math.PI - 90;
-            const flip = leaf.x >= Math.PI;
-            const d = leaf.data;
-            const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
-            const color = phylum
-              ? colorFor(phylum.data.name)
-              : focusPhylum
-                ? colorFor(focusPhylum)
-                : "#5b6573";
-            const floatStyle = {
-              animationDelay: `${(i % 12) * -0.5}s`,
-              animationDuration: `${6 + (i % 5)}s`,
-            };
+          {/* collapse handles on expanded genera */}
+          {handles.map((n) => (
+            <g
+              key={`h-${n.data.key}`}
+              className="treehandle"
+              transform={`translate(${sx(n)},${sy(n)})`}
+              onClick={() => toggle(n.data.key!)}
+            >
+              <circle r={6}>
+                <title>Collapse {n.data.name}</title>
+              </circle>
+              <line x1={-3} y1={0} x2={3} y2={0} />
+            </g>
+          ))}
 
-            // Collapsed node (genus / class / phylum) — a counted blob.
+          {/* tips: isolates and collapsed blobs */}
+          {leaves.map((leaf) => {
+            const d = leaf.data;
+            const color = phylumColor(leaf);
+            const x = sx(leaf);
+            const y = sy(leaf);
+
+            // Collapsed genus/class/phylum — a counted blob.
             if (!leaf.children && d.rank !== "isolate" && d.isolates) {
               const count = d.isolates.length;
-              const r = 7 + Math.min(count, 16) * 0.95;
-              const fill = d.rank === "phylum" ? colorFor(d.name) : color;
-              const major = d.rank === "phylum";
+              const r = 5 + Math.min(count, 14) * 0.7;
               const anyHit = q !== "" && d.isolates.some((s) => hits(s, q));
               const cls = q !== "" ? (anyHit ? " is-hit" : " is-dim") : "";
               return (
-                <g key={d.key} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
-                  <g className={`treenode${cls}`} style={floatStyle}>
-                    <circle
-                      className="treenode__cluster"
-                      r={r}
-                      fill={fill}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`${d.name}, ${count} isolates. Activate to expand.`}
-                      onClick={() => toggle(d.key!)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          toggle(d.key!);
-                        }
-                      }}
-                    >
-                      <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
-                    </circle>
-                    {/* counter-rotate so the count always reads upright */}
-                    <g transform={`rotate(${-angleDeg})`}>
-                      <text className="treenode__count" dy="0.32em" textAnchor="middle">
-                        {count}
-                      </text>
-                    </g>
-                    <text
-                      className={`treenode__label treenode__label--cluster${major ? " treenode__label--major" : ""}`}
-                      style={major ? { fill } : undefined}
-                      transform={flip ? "rotate(180)" : undefined}
-                      x={flip ? -(r + 7) : r + 7}
-                      dy="0.31em"
-                      textAnchor={flip ? "end" : "start"}
-                      onClick={() => toggle(d.key!)}
-                    >
-                      {d.rank === "genus" ? (
-                        <>
-                          <tspan fontStyle="italic">{d.name}</tspan> spp.
-                        </>
-                      ) : (
-                        d.name
-                      )}
-                    </text>
-                  </g>
+                <g key={d.key} className={`treenode${cls}`}>
+                  <circle
+                    className="treenode__cluster"
+                    cx={x}
+                    cy={y}
+                    r={r}
+                    fill={color}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${d.name}, ${count} isolates. Activate to expand.`}
+                    onClick={() => toggle(d.key!)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggle(d.key!);
+                      }
+                    }}
+                  >
+                    <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
+                  </circle>
+                  <text className="treenode__count" x={x} y={y} dy="0.32em" textAnchor="middle">
+                    {count}
+                  </text>
+                  <text className="treenode__label treenode__label--cluster" x={x + r + 6} y={y} dy="0.31em">
+                    <tspan fontStyle="italic">{d.name}</tspan> spp.
+                  </text>
                 </g>
               );
             }
@@ -599,38 +563,36 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
             const hit = hits(s, q);
             const cls = q !== "" ? (hit ? " is-hit" : " is-dim") : "";
             return (
-              <g key={s.id} transform={`rotate(${angleDeg}) translate(${leaf.y},0)`}>
-                <g className={`treenode${cls}`} style={floatStyle}>
-                  <circle
-                    className={`treenode__dot${isSel ? " is-sel" : ""}`}
-                    r={isSel ? 7 : 4.5}
-                    fill={color}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`${binomial(s.genus, s.species)}. Activate for details.`}
-                    onClick={() => onSelect(s)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelect(s);
-                      }
-                    }}
-                  />
-                  <text
-                    className="treenode__label"
-                    transform={flip ? "rotate(180)" : undefined}
-                    x={flip ? -10 : 10}
-                    dy="0.31em"
-                    textAnchor={flip ? "end" : "start"}
-                    onClick={() => onSelect(s)}
-                  >
-                    {binomial(s.genus, s.species)}
-                  </text>
-                </g>
+              <g key={s.id} className={`treenode${cls}`}>
+                <circle
+                  className={`treenode__dot${isSel ? " is-sel" : ""}`}
+                  cx={x}
+                  cy={y}
+                  r={isSel ? 6 : 4}
+                  fill={color}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${binomial(s.genus, s.species)}. Activate for details.`}
+                  onClick={() => onSelect(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(s);
+                    }
+                  }}
+                />
+                <text
+                  className="treenode__label"
+                  x={x + 9}
+                  y={y}
+                  dy="0.31em"
+                  onClick={() => onSelect(s)}
+                >
+                  {binomial(s.genus, s.species)}
+                </text>
               </g>
             );
           })}
-          </g>
         </g>
       </svg>
     </>

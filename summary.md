@@ -94,14 +94,24 @@ bottom-sheet on mobile). Tree and Board are full-width.
   chevron; date sits at the card's bottom-right; Edit/Delete (inline confirm).
 - `src/components/Readout.tsx` — shared test-chip readout (used by the card and
   the board chips).
-- `src/components/TreeView.tsx` — D3 radial taxonomy. `buildTaxonomy` (in
-  `lib/taxonomy.ts`) → phylum → (class, Proteobacteria only, for α/β/γ/ε) →
-  genus → isolate. Phylum hulls (convex blobs) with labels, gentle float
-  animation, click a tip → detail drawer (lineage breadcrumb + readout + edit).
-  Collapsible: genus auto-collapses at ≥3 isolates ("Genus spp. (n)"); phyla
-  (click hull label) and classes (click greek tag) collapse too; "−" handle on
-  genera; counts stay upright; "Reset layout". An **Unplaced** list (GBIF
-  matchType NONE) sits under the tree.
+- `src/components/TreeView.tsx` — the tree view. A `TreeView` container owns a
+  **Dendrogram / Outline** layout toggle, a shared **search** box, and the shared
+  detail drawer (click a tip → lineage breadcrumb + readout + edit). Topology is
+  `buildTaxonomy` (in `lib/taxonomy.ts`) → phylum → (class, Proteobacteria only,
+  for α/β/γ) → genus → isolate.
+  - **`Dendrogram`** (in the same file) — a horizontal rectangular cladogram
+    (root at left, orthogonal "elbow" branches fanning right, species labels down
+    the right edge; rank labels on the left-side internal nodes). d3 `cluster`
+    projected to cartesian. **Pan + wheel/pinch zoom** (d3-zoom); **click a
+    phylum/class label to focus** (re-root) with a breadcrumb to step back;
+    **Expand all / Collapse all / Reset view / Reset layout**; genera
+    auto-collapse at ≥3 isolates ("Genus spp.") with a "−" handle; search
+    highlights matches, dims the rest, and fits the view to them. Tips are
+    keyboard-activatable.
+  - **`OutlineTree`** (`components/OutlineTree.tsx`) — an indented, collapsible,
+    keyboard/ARIA-friendly tree; search filters to matching branches.
+  - An **Unplaced** list (GBIF matchType NONE) sits under the tree. Uses
+    `d3-zoom` + `d3-selection`.
 - `src/lib/gbif.ts` — `fetchLineage(genus, species, oldName?)`: matches against
   the GBIF backbone (browser-side; GBIF allows CORS). Tries the current name,
   falls back to `old_name` if it can't be placed.

@@ -1436,18 +1436,79 @@ textarea {
 .tree__stage--outline {
   background: var(--surface);
 }
-/* floating per-layout controls (e.g. Reset layout), top-left of the stage */
+/* floating layout controls (expand/collapse all, reset), top-right of the stage */
 .tree__controls {
   position: absolute;
   top: 10px;
-  left: 10px;
+  right: 10px;
   z-index: 2;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
+  max-width: 60%;
+}
+.tree__controls .btn {
+  background: #ffffffd9;
+  backdrop-filter: blur(2px);
 }
 .btn--sm {
   padding: 5px 11px;
   font-size: 0.8rem;
+}
+
+/* focused-branch breadcrumb, top-left of the stage */
+.tree__crumb {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 0.86rem;
+  background: #ffffffd9;
+  backdrop-filter: blur(2px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+.tree__crumb-sep {
+  color: var(--muted);
+  margin: 0 2px;
+}
+.tree__crumb-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-deep);
+  font: inherit;
+  cursor: pointer;
+}
+.tree__crumb-link:hover {
+  text-decoration: underline;
+}
+.tree__crumb-cur {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* pan/zoom: let the svg own touch gestures; stop the float while interacting */
+.tree__svg {
+  touch-action: none;
+  cursor: grab;
+}
+.tree__svg:active {
+  cursor: grabbing;
+}
+.tree__content.is-still .treenode {
+  animation: none;
+}
+.treenode__dot:focus-visible,
+.treenode__cluster:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* matches/dimming when searching the radial tree */

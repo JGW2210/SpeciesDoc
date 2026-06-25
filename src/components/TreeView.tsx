@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   hierarchy,
   cluster,
@@ -6,6 +6,8 @@ import {
   type HierarchyPointLink,
 } from "d3-hierarchy";
 import { polygonHull, polygonCentroid } from "d3-polygon";
+import { select } from "d3-selection";
+import { zoom as d3zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
 import {
   buildTaxonomy,
   gatherIsolates,
@@ -82,6 +84,53 @@ function collapse(node: TaxNode, phylum: string, overrides: Set<string>): TaxNod
 
 const hits = (s: Species, q: string) =>
   q !== "" && binomial(s.genus, s.species).toLowerCase().includes(q);
+
+// Find a (phylum/class) subtree by its collapse key, to re-root the layout when
+// the user focuses on a branch.
+function findByKey(node: TaxNode, phylum: string, target: string): TaxNode | null {
+  if (keyOf(node, phylum) === target) return node;
+  const nextPhylum = node.rank === "phylum" ? node.name : phylum;
+  for (const c of node.children ?? []) {
+    const found = findByKey(c, nextPhylum, target);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Every collapsible genus key, and which ones are "big" (collapsed by default),
+// so Expand-all / Collapse-all can compute the right override set.
+function genusKeys(species: Species[]): { all: string[]; big: Set<string> } {
+  const all: string[] = [];
+  const big = new Set<string>();
+  const walk = (n: TaxNode, phylum: string) => {
+    if (n.rank === "genus") {
+      const k = keyOf(n, phylum)!;
+      all.push(k);
+      if (gatherIsolates(n).length >= COLLAPSE_MIN) big.add(k);
+    }
+    const nextPhylum = n.rank === "phylum" ? n.name : phylum;
+    n.children?.forEach((c) => walk(c, nextPhylum));
+  };
+  walk(buildTaxonomy(species), "");
+  return { all, big };
+}
+
+// "Bacteria › Pseudomonadota › β" trail for the current focus key.
+function focusCrumb(focus: string | null): { label: string; key: string | null }[] {
+  const trail: { label: string; key: string | null }[] = [{ label: "Bacteria", key: null }];
+  if (!focus) return trail;
+  if (focus.startsWith("p:")) {
+    trail.push({ label: focus.slice(2), key: focus });
+  } else if (focus.startsWith("c:")) {
+    const rest = focus.slice(2); // phylum/Class
+    const slash = rest.indexOf("/");
+    const phylum = rest.slice(0, slash);
+    const cls = rest.slice(slash + 1);
+    trail.push({ label: phylum, key: `p:${phylum}` });
+    trail.push({ label: cls, key: focus });
+  }
+  return trail;
+}
 
 interface TreeViewProps {
   species: Species[];
@@ -223,6 +272,10 @@ interface RadialTreeProps {
 
 function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
   const [overrides, setOverrides] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<string | null>(null);
+  const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const q = query.trim().toLowerCase();
 
   const toggle = (key: string) =>
@@ -233,11 +286,46 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
       return next;
     });
 
-  const { leaves, links, hulls, handles } = useMemo(() => {
-    const data = collapse(buildTaxonomy(species), "", overrides);
+  const gk = useMemo(() => genusKeys(species), [species]);
+  const expandAll = () => setOverrides(new Set(gk.big));
+  const collapseAll = () => setOverrides(new Set(gk.all.filter((k) => !gk.big.has(k))));
+  const resetLayout = () => {
+    setOverrides(new Set());
+    setFocus(null);
+  };
+  const resetView = () => {
+    if (svgRef.current && zoomRef.current)
+      select(svgRef.current).call(zoomRef.current.transform, zoomIdentity);
+  };
+
+  // Wire up pan + wheel/pinch zoom once.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const sel = select(svg);
+    const z = d3zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.6, 10])
+      .on("zoom", (e) => setTransform(e.transform));
+    sel.call(z).on("dblclick.zoom", null); // keep double-clicks for nodes
+    zoomRef.current = z;
+    return () => {
+      sel.on(".zoom", null);
+    };
+  }, []);
+
+  const focusPhylum = focus
+    ? focus.startsWith("p:")
+      ? focus.slice(2)
+      : focus.slice(2, focus.indexOf("/"))
+    : null;
+
+  const { leaves, links, hulls, handles, fit, fitSig } = useMemo(() => {
+    const full = collapse(buildTaxonomy(species), "", overrides);
+    const rootData = focus ? findByKey(full, "", focus) ?? full : full;
+    const focused = rootData !== full;
     const root = cluster<TaxNode>()
       .size([2 * Math.PI, RADIUS])
-      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(data));
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(rootData));
 
     const allLeaves = root.leaves();
     const allLinks = root.links();
@@ -248,8 +336,9 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
       .descendants()
       .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
 
-    // One hull per *expanded* phylum (skip collapsed phyla, which are single nodes).
-    const phyla = (root.children ?? []).filter((p) => !!p.children);
+    // One hull per *expanded* phylum (skip collapsed phyla, which are single
+    // nodes; and skip all hulls when focused into a single branch).
+    const phyla = focused ? [] : (root.children ?? []).filter((p) => !!p.children);
     const hullShapes = phyla.map((p) => {
       const pts = p.leaves().map(pos);
       pts.push(pos(p));
@@ -278,25 +367,95 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
       return { name: p.data.name, color, path, labelAt };
     });
 
-    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes };
-  }, [species, overrides]);
+    // When searching, frame the matches: fit the bounding box of matched tips.
+    let fit: ZoomTransform | null = null;
+    let fitSig = "";
+    if (q) {
+      const pts = allLeaves
+        .filter((leaf) => {
+          const d = leaf.data;
+          if (d.isolate) return hits(d.isolate, q);
+          return (d.isolates ?? []).some((s) => hits(s, q));
+        })
+        .map(pos);
+      if (pts.length) {
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+        const w = Math.max(Math.max(...xs) - Math.min(...xs), 1);
+        const h = Math.max(Math.max(...ys) - Math.min(...ys), 1);
+        const k = Math.max(0.8, Math.min(5, (SIZE * 0.55) / Math.max(w, h)));
+        const tx = C - k * (C + cx);
+        const ty = C - k * (C + cy);
+        fit = zoomIdentity.translate(tx, ty).scale(k);
+        fitSig = `${Math.round(k * 100)}:${Math.round(tx)}:${Math.round(ty)}`;
+      }
+    }
+
+    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes, fit, fitSig };
+  }, [species, overrides, focus, q]);
+
+  // Apply the fit-to-search transform (or reset when the search clears).
+  useEffect(() => {
+    const svg = svgRef.current;
+    const z = zoomRef.current;
+    if (!svg || !z) return;
+    const sel = select(svg);
+    if (fit) sel.call(z.transform, fit);
+    else if (q === "") sel.call(z.transform, zoomIdentity);
+  }, [fitSig, q]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hold the gentle float still while the user is reading/interacting, and on
+  // big trees where lots of motion is distracting.
+  const still = q !== "" || !!focus || transform.k !== 1 || leaves.length > 140;
+  const crumb = focusCrumb(focus);
 
   return (
     <>
-      {overrides.size > 0 && (
-        <div className="tree__controls">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOverrides(new Set())}>
+      {focus && (
+        <nav className="tree__crumb" aria-label="Focused branch">
+          {crumb.map((c, i) => (
+            <span key={i} className="tree__crumb-item">
+              {i > 0 && <span className="tree__crumb-sep" aria-hidden="true">›</span>}
+              {i < crumb.length - 1 ? (
+                <button type="button" className="tree__crumb-link" onClick={() => setFocus(c.key)}>
+                  {c.label}
+                </button>
+              ) : (
+                <span className="tree__crumb-cur">{c.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+      )}
+      <div className="tree__controls">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={expandAll}>
+          Expand all
+        </button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={collapseAll}>
+          Collapse all
+        </button>
+        {(transform.k !== 1 || transform.x !== 0 || transform.y !== 0) && (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetView}>
+            Reset view
+          </button>
+        )}
+        {(overrides.size > 0 || focus) && (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetLayout}>
             Reset layout
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <svg
+        ref={svgRef}
         className="tree__svg"
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         role="img"
-        aria-label="Radial taxonomic tree of logged isolates"
+        aria-label="Radial taxonomic tree of logged isolates. Scroll to zoom, drag to pan."
       >
-        <g transform={`translate(${C},${C})`}>
+        <g transform={transform.toString()}>
+          <g className={`tree__content${still ? " is-still" : ""}`} transform={`translate(${C},${C})`}>
           {hulls.map((h) => (
             <g key={h.name} className="hull">
               {h.path && (
@@ -308,10 +467,10 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
                 y={h.labelAt[1]}
                 fill={h.color}
                 textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
-                onClick={() => toggle(`p:${h.name}`)}
+                onClick={() => setFocus(`p:${h.name}`)}
               >
                 {h.name}
-                <title>Collapse {h.name}</title>
+                <title>Focus on {h.name}</title>
               </text>
             </g>
           ))}
@@ -336,10 +495,10 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
                   x={x}
                   y={y}
                   textAnchor="middle"
-                  onClick={() => toggle(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
+                  onClick={() => setFocus(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
                 >
                   {n.data.tag}
-                  <title>Collapse {n.data.name}</title>
+                  <title>Focus on {n.data.name}</title>
                 </text>
               );
             })}
@@ -368,7 +527,11 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
             const flip = leaf.x >= Math.PI;
             const d = leaf.data;
             const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
-            const color = phylum ? colorFor(phylum.data.name) : "#5b6573";
+            const color = phylum
+              ? colorFor(phylum.data.name)
+              : focusPhylum
+                ? colorFor(focusPhylum)
+                : "#5b6573";
             const floatStyle = {
               animationDelay: `${(i % 12) * -0.5}s`,
               animationDuration: `${6 + (i % 5)}s`,
@@ -389,7 +552,16 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
                       className="treenode__cluster"
                       r={r}
                       fill={fill}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${d.name}, ${count} isolates. Activate to expand.`}
                       onClick={() => toggle(d.key!)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggle(d.key!);
+                        }
+                      }}
                     >
                       <title>{`${d.name} — ${count} isolate${count === 1 ? "" : "s"} (click to expand)`}</title>
                     </circle>
@@ -433,7 +605,16 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
                     className={`treenode__dot${isSel ? " is-sel" : ""}`}
                     r={isSel ? 7 : 4.5}
                     fill={color}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${binomial(s.genus, s.species)}. Activate for details.`}
                     onClick={() => onSelect(s)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(s);
+                      }
+                    }}
                   />
                   <text
                     className="treenode__label"
@@ -449,6 +630,7 @@ function RadialTree({ species, query, selectedId, onSelect }: RadialTreeProps) {
               </g>
             );
           })}
+          </g>
         </g>
       </svg>
     </>

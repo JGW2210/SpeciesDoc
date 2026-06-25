@@ -42,6 +42,7 @@ export default function SpeciesList({
   const [dateTo, setDateTo] = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("any");
   const [collapsed, setCollapsed] = useState(false);
+  const [sort, setSort] = useState<"added" | "az">("added");
 
   const activeKeys = Object.keys(filters) as TestKey[];
   const dateActive = !!(dateFrom || dateTo);
@@ -101,11 +102,17 @@ export default function SpeciesList({
   }, [species, query, filters, dateFrom, dateTo]);
 
   const grouped = useMemo(() => {
+    const arranged =
+      sort === "az"
+        ? [...filtered].sort((a, b) =>
+            binomial(a.genus, a.species).localeCompare(binomial(b.genus, b.species)),
+          )
+        : filtered; // "added" keeps the created_at-desc order from the source
     return GRAM_GROUPS.map((group) => ({
       group,
-      items: filtered.filter((s) => gramGroupOf(s) === group.id),
+      items: arranged.filter((s) => gramGroupOf(s) === group.id),
     }));
-  }, [filtered]);
+  }, [filtered, sort]);
 
   if (loading) {
     return <p className="list__status">Loading the bench log…</p>;
@@ -161,6 +168,15 @@ export default function SpeciesList({
             onClick={() => setCollapsed((c) => !c)}
           >
             {collapsed ? "Expand all" : "Collapse all"}
+          </button>
+          <button
+            type="button"
+            className={`filterbtn${sort === "az" ? " has-active" : ""}`}
+            aria-pressed={sort === "az"}
+            title={sort === "az" ? "Sorted A–Z — switch to newest first" : "Sort A–Z"}
+            onClick={() => setSort((s) => (s === "az" ? "added" : "az"))}
+          >
+            {sort === "az" ? "Sort: A–Z" : "Sort: Newest"}
           </button>
         </div>
       </div>

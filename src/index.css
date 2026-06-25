@@ -1992,3 +1992,15 @@ textarea {
 .cchip__detail .readout {
   gap: 4px;
 }
+
+/* date moved to the card's bottom-right (out of the name row) */
+.card__foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.card__foot time {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}

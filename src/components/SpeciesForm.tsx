@@ -58,11 +58,20 @@ function toDraft(s: Species): SpeciesDraft {
 interface SpeciesFormProps {
   onSubmit: (draft: SpeciesDraft, editingId: string | null) => Promise<void>;
   editing: Species | null;
+  species: Species[]; // existing isolates, for duplicate detection
+  onEditExisting: (s: Species) => void;
   onCancelEdit: () => void;
   disabled?: boolean;
 }
 
-export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled }: SpeciesFormProps) {
+export default function SpeciesForm({
+  onSubmit,
+  editing,
+  species,
+  onEditExisting,
+  onCancelEdit,
+  disabled,
+}: SpeciesFormProps) {
   const [draft, setDraft] = useState<SpeciesDraft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +113,24 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
   const toggleAll = () =>
     setOpenGroups(allOpen ? new Set() : new Set(CATEGORY_GROUPS.map((g) => g.name)));
 
-  const canSave = draft.genus.trim() !== "" && draft.species.trim() !== "" && !disabled && !saving;
+  // Flag an already-logged isolate with the same name (excluding the one being
+  // edited), to prevent accidental double entry.
+  const nameKey =
+    draft.genus.trim() && draft.species.trim()
+      ? binomial(draft.genus, draft.species).toLowerCase()
+      : "";
+  const duplicate = nameKey
+    ? (species.find(
+        (s) => s.id !== editing?.id && binomial(s.genus, s.species).toLowerCase() === nameKey,
+      ) ?? null)
+    : null;
+
+  const canSave =
+    draft.genus.trim() !== "" &&
+    draft.species.trim() !== "" &&
+    !duplicate &&
+    !disabled &&
+    !saving;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -169,6 +195,18 @@ export default function SpeciesForm({ onSubmit, editing, onCancelEdit, disabled 
           />
         </label>
       </div>
+
+      {duplicate && (
+        <p className="form__dupe" role="alert">
+          <span>
+            <em>{binomial(duplicate.genus, duplicate.species)}</em> is already in your list — saving is
+            blocked to avoid a duplicate.
+          </span>
+          <button type="button" className="form__dupe-edit" onClick={() => onEditExisting(duplicate)}>
+            Edit the existing one
+          </button>
+        </p>
+      )}
 
       <label className="field field--wide">
         <span className="field__label">Old name / synonym (optional)</span>

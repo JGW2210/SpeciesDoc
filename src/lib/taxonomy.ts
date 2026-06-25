@@ -4,7 +4,7 @@ import { gramGroupOf, binomial } from "./format";
 // A node in the taxonomic tree handed to d3.hierarchy.
 export interface TaxNode {
   name: string; // display name
-  rank: "root" | "phylum" | "class" | "genus" | "isolate";
+  rank: "root" | "phylum" | "class" | "order" | "genus" | "isolate";
   tag?: string; // optional short marker (e.g. greek letter for Proteobacteria)
   isolate?: Species; // present on individual leaves
   isolates?: Species[]; // all isolates under a genus (used for collapsing)
@@ -157,7 +157,10 @@ export function resolveClass(genus: string, gbifClass?: string | null): string |
 // Build the topology phylum → (class, only for Proteobacteria) → genus → isolate.
 // Order/family are intentionally skipped to keep the radial tree readable like
 // the reference figure; the full lineage is still shown in the detail panel.
-export function buildTaxonomy(species: Species[]): TaxNode {
+// `detailed` inserts a full class + order layer for every placed isolate (used
+// by the dendrogram). The default keeps the lean topology — a class node only
+// for the Proteobacteria α/β/γ split — used by the radial and outline views.
+export function buildTaxonomy(species: Species[], detailed = false): TaxNode {
   const root: TaxNode = { name: "Bacteria", rank: "root", children: [] };
 
   const child = (parent: TaxNode, name: string, rank: TaxNode["rank"], tag?: string): TaxNode => {
@@ -177,7 +180,11 @@ export function buildTaxonomy(species: Species[]): TaxNode {
     if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
       node = child(node, resolvePhylum(s.genus, lin.phylum), "phylum");
       const cls = resolveClass(s.genus, lin.class);
-      if (cls && GREEK[cls]) {
+      if (detailed) {
+        // Show class for every phylum, plus the order, for finer grouping.
+        if (cls) node = child(node, cls, "class", GREEK[cls]);
+        if (lin.order) node = child(node, lin.order, "order");
+      } else if (cls && GREEK[cls]) {
         node = child(node, cls, "class", GREEK[cls]);
       }
       // Use the entered (current) genus so the tree shows modern names, even when

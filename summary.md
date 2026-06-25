@@ -107,7 +107,10 @@ bottom-sheet on mobile). Tree and Board are full-width.
     to focus.
   - **`Dendrogram`** (in the same file) — a horizontal rectangular cladogram
     (root at left, orthogonal "elbow" branches fanning right, species labels down
-    the right edge; rank labels on the left-side internal nodes). d3 `cluster`
+    the right edge; rank labels on the left-side internal nodes). Uses the
+    **detailed topology** — `buildTaxonomy(species, true)` inserts a class (every
+    phylum) + order layer (phylum → class → order → genus → isolate); the radial
+    and outline keep the lean default. Order labels are display-only. d3 `cluster`
     projected to cartesian. **Pan + wheel/pinch zoom** (d3-zoom); **click a
     phylum/class label to focus** (re-root) with a breadcrumb to step back;
     **Expand all / Collapse all / Reset view / Reset layout**; genera

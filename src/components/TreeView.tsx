@@ -678,7 +678,8 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
   const focusPhylum = phylumOf(focus);
 
   const { leaves, links, internals, handles, vbW, vbH, fit, fitSig } = useMemo(() => {
-    const full = collapse(buildTaxonomy(species), "", overrides);
+    // The dendrogram uses the detailed topology: class + order for every isolate.
+    const full = collapse(buildTaxonomy(species, true), "", overrides);
     const rootData = focus ? findByKey(full, "", focus) ?? full : full;
 
     const hroot = hierarchy(rootData);
@@ -697,7 +698,8 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
     const internalNodes = root
       .descendants()
       .filter(
-        (n) => !!n.children && n.depth >= 1 && ["phylum", "class", "genus"].includes(n.data.rank),
+        (n) =>
+          !!n.children && n.depth >= 1 && ["phylum", "class", "order", "genus"].includes(n.data.rank),
       );
 
     const handleNodes = root
@@ -776,13 +778,22 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
             const d = n.data;
             const isPhylum = d.rank === "phylum";
             const isClass = d.rank === "class";
+            const isGenus = d.rank === "genus";
             const color = isPhylum ? colorFor(d.name) : phylumColor(n);
-            const onClickNode = () =>
-              isPhylum || isClass
-                ? setFocus(isPhylum ? `p:${d.name}` : `c:${n.parent?.data.name ?? ""}/${d.name}`)
-                : toggle(d.key!);
+            // phylum/class focus (re-root), genus collapses, order is display-only.
+            const onClickNode = isPhylum
+              ? () => setFocus(`p:${d.name}`)
+              : isClass
+                ? () => setFocus(`c:${n.parent?.data.name ?? ""}/${d.name}`)
+                : isGenus
+                  ? () => toggle(d.key!)
+                  : undefined;
             return (
-              <g key={`${d.rank}-${dx(n)}-${dy(n)}`} className="dendlabel" onClick={onClickNode}>
+              <g
+                key={`${d.rank}-${dx(n)}-${dy(n)}`}
+                className={`dendlabel${onClickNode ? "" : " dendlabel--static"}`}
+                onClick={onClickNode}
+              >
                 <circle className="dendlabel__dot" cx={dx(n)} cy={dy(n)} r={3.2} fill={color} />
                 <text
                   className={`dendlabel__text dendlabel__text--${d.rank}`}
@@ -791,10 +802,12 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
                   fill={isPhylum ? color : undefined}
                 >
                   {isClass && d.tag ? `${d.tag} ${d.name}` : d.name}
-                  <title>
-                    {isPhylum || isClass ? "Focus on " : "Collapse "}
-                    {d.name}
-                  </title>
+                  {onClickNode && (
+                    <title>
+                      {isGenus ? "Collapse " : "Focus on "}
+                      {d.name}
+                    </title>
+                  )}
                 </text>
               </g>
             );

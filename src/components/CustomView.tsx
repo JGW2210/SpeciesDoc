@@ -33,6 +33,17 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const [overSub, setOverSub] = useState<string | null>(null);
   const [allOpen, setAllOpen] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // What's being dragged for reordering (null during isolate-chip drags).
+  const [drag, setDrag] = useState<
+    { kind: "cat"; catId: string } | { kind: "sub"; catId: string; subId: string } | null
+  >(null);
+  const [catDrop, setCatDrop] = useState<string | null>(null);
+  const [subDrop, setSubDrop] = useState<string | null>(null);
+  const endReorder = () => {
+    setDrag(null);
+    setCatDrop(null);
+    setSubDrop(null);
+  };
   const loaded = useRef(false);
   // Always-current snapshot so the unmount flush saves the latest state.
   const boardRef = useRef(board);
@@ -94,14 +105,48 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const addCategory = () =>
     setBoard((b) => ({ categories: [...b.categories, newCat(b.categories.length + 1)] }));
 
-  const removeCategory = (catId: string) =>
+  const removeCategory = (catId: string) => {
+    const cat = board.categories.find((c) => c.id === catId);
+    const n = cat ? cat.isolateIds.length + cat.subs.reduce((a, s) => a + s.isolateIds.length, 0) : 0;
+    const ok = window.confirm(
+      `Delete the category “${cat?.name ?? ""}”${
+        n > 0 ? ` and its arrangement of ${n} isolate${n === 1 ? "" : "s"}` : ""
+      }? This can’t be undone.`,
+    );
+    if (!ok) return;
     setBoard((b) => ({ categories: b.categories.filter((c) => c.id !== catId) }));
+  };
 
   const addSub = (catId: string) =>
     mutateCat(catId, (c) => ({ ...c, subs: [...c.subs, newSub(c.subs.length + 1)] }));
 
   const removeSub = (catId: string, subId: string) =>
     mutateCat(catId, (c) => ({ ...c, subs: c.subs.filter((s) => s.id !== subId) }));
+
+  // Reorder helpers: insert the dragged item before the drop target.
+  const moveCategory = (dragId: string, targetId: string) =>
+    setBoard((b) => {
+      if (dragId === targetId) return b;
+      const cats = [...b.categories];
+      const from = cats.findIndex((c) => c.id === dragId);
+      if (from < 0) return b;
+      const [m] = cats.splice(from, 1);
+      const to = cats.findIndex((c) => c.id === targetId);
+      cats.splice(to < 0 ? cats.length : to, 0, m);
+      return { categories: cats };
+    });
+
+  const moveSub = (catId: string, dragSubId: string, targetSubId: string) =>
+    mutateCat(catId, (c) => {
+      if (dragSubId === targetSubId) return c;
+      const subs = [...c.subs];
+      const from = subs.findIndex((s) => s.id === dragSubId);
+      if (from < 0) return c;
+      const [m] = subs.splice(from, 1);
+      const to = subs.findIndex((s) => s.id === targetSubId);
+      subs.splice(to < 0 ? subs.length : to, 0, m);
+      return { ...c, subs };
+    });
 
   // subId null targets the category's own isolate list.
   const addIsolate = (catId: string, subId: string | null, isoId: string) => {
@@ -144,6 +189,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
         className={`csub__drop${overSub === key ? " is-over" : ""}`}
         style={{ ["--sub" as string]: color }}
         onDragOver={(e) => {
+          if (drag) return; // a category/subcategory reorder is in progress
           e.preventDefault();
           if (overSub !== key) setOverSub(key);
         }}
@@ -248,7 +294,37 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
                 className="ccat"
                 style={{ ["--cat" as string]: cat.color }}
               >
-                <header className="ccat__head">
+                <header
+                  className={`ccat__head${catDrop === cat.id ? " is-drop" : ""}`}
+                  onDragOver={(e) => {
+                    if (drag?.kind === "cat" && drag.catId !== cat.id) {
+                      e.preventDefault();
+                      if (catDrop !== cat.id) setCatDrop(cat.id);
+                    }
+                  }}
+                  onDragLeave={() => setCatDrop((cur) => (cur === cat.id ? null : cur))}
+                  onDrop={(e) => {
+                    if (drag?.kind === "cat") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      moveCategory(drag.catId, cat.id);
+                    }
+                    endReorder();
+                  }}
+                >
+                  <span
+                    className="grip"
+                    draggable
+                    title="Drag to reorder"
+                    onDragStart={(e) => {
+                      setDrag({ kind: "cat", catId: cat.id });
+                      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "cat" }));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={endReorder}
+                  >
+                    ⠿
+                  </span>
                   <button
                     type="button"
                     className={`chev${cat.collapsed ? "" : " is-open"}`}
@@ -291,7 +367,37 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
                           const subColor = sub.color ?? cat.color;
                           return (
                             <div key={sub.id} className="csub" style={{ ["--sub" as string]: subColor }}>
-                              <header className="csub__head">
+                              <header
+                                className={`csub__head${subDrop === sub.id ? " is-drop" : ""}`}
+                                onDragOver={(e) => {
+                                  if (drag?.kind === "sub" && drag.catId === cat.id && drag.subId !== sub.id) {
+                                    e.preventDefault();
+                                    if (subDrop !== sub.id) setSubDrop(sub.id);
+                                  }
+                                }}
+                                onDragLeave={() => setSubDrop((cur) => (cur === sub.id ? null : cur))}
+                                onDrop={(e) => {
+                                  if (drag?.kind === "sub" && drag.catId === cat.id) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    moveSub(cat.id, drag.subId, sub.id);
+                                  }
+                                  endReorder();
+                                }}
+                              >
+                                <span
+                                  className="grip"
+                                  draggable
+                                  title="Drag to reorder"
+                                  onDragStart={(e) => {
+                                    setDrag({ kind: "sub", catId: cat.id, subId: sub.id });
+                                    e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "sub" }));
+                                    e.dataTransfer.effectAllowed = "move";
+                                  }}
+                                  onDragEnd={endReorder}
+                                >
+                                  ⠿
+                                </span>
                                 <button
                                   type="button"
                                   className={`chev${sub.collapsed ? "" : " is-open"}`}

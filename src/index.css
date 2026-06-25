@@ -1528,6 +1528,12 @@ textarea {
 .dendlabel {
   cursor: pointer;
 }
+.dendlabel--static {
+  cursor: default;
+}
+.dendlabel--static:hover .dendlabel__text {
+  text-decoration: none;
+}
 .dendlabel__dot {
   stroke: #fff;
   stroke-width: 1px;
@@ -1552,6 +1558,12 @@ textarea {
 .dendlabel__text--class {
   font-weight: 650;
   fill: var(--ink);
+}
+.dendlabel__text--order {
+  font-size: 10px;
+  font-weight: 500;
+  fill: var(--muted);
+  letter-spacing: 0.02em;
 }
 .dendlabel__text--genus {
   font-style: italic;

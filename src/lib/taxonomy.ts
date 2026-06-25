@@ -52,7 +52,10 @@ const MODERN_PHYLUM: Record<string, string> = {
 
 export function modernPhylum(name: string | null | undefined): string {
   if (!name) return "Other bacteria";
-  return MODERN_PHYLUM[name] ?? name;
+  // Strip GTDB-style split suffixes (e.g. Firmicutes_A, Actinobacteriota_B) so
+  // they fold into the single current phylum.
+  const base = name.replace(/_[A-Z]+$/, "");
+  return MODERN_PHYLUM[base] ?? base;
 }
 
 // Build the topology phylum → (class, only for Proteobacteria) → genus → isolate.

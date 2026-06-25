@@ -524,14 +524,16 @@ textarea {
   background: var(--surface-2);
 }
 .seg__btn {
+  flex: 1 1 0; /* share the bar evenly instead of leaving a trailing gap */
+  min-width: 0;
   border: none;
   background: transparent;
-  padding: 6px 0;
-  min-width: 38px;
+  padding: 6px 4px;
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: 0.92rem;
   color: var(--ink-soft);
+  white-space: nowrap;
   border-right: 1px solid var(--border);
   transition: background 0.12s, color 0.12s;
 }
@@ -540,7 +542,6 @@ textarea {
 }
 .seg__btn--gram,
 .seg__btn--of {
-  min-width: 64px;
   font-size: 0.8rem;
   letter-spacing: 0.02em;
 }

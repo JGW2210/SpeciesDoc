@@ -261,10 +261,13 @@ function Field({ cat, value, onSelect, onText }: FieldProps) {
   const isChoice = cat.type === "choice";
   const isSeg = !isText && !isChoice && !!cat.options;
   const wide = cat.type === "textarea" || isChoice;
+  // Choice fields (e.g. Motility) are large, so they collapse on their own and
+  // start closed — the chosen value stays visible in the header.
+  const [choiceOpen, setChoiceOpen] = useState(false);
 
   return (
     <div className={`tfield${wide ? " tfield--wide" : ""}`}>
-      <div className="tfield__label">{cat.label}</div>
+      {!isChoice && <div className="tfield__label">{cat.label}</div>}
 
       {isSeg && cat.options && (
         <div className="seg" role="group" aria-label={cat.label}>
@@ -284,26 +287,47 @@ function Field({ cat, value, onSelect, onText }: FieldProps) {
       )}
 
       {isChoice && cat.options && (
-        <div className="choices" role="group" aria-label={cat.label}>
-          {groupOptions(cat.options).map(([groupName, opts]) => (
-            <div key={groupName} className="choicegrp">
-              {groupName && <div className="choicegrp__label">{groupName}</div>}
-              <div className="choicegrp__opts">
-                {opts.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`choice${value === opt.value ? " is-on" : ""}`}
-                    aria-pressed={value === opt.value}
-                    title={opt.title ?? opt.value}
-                    onClick={() => onSelect(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
+        <div className="cfield">
+          <button
+            type="button"
+            className={`cfield__head${choiceOpen ? " is-open" : ""}`}
+            aria-expanded={choiceOpen}
+            onClick={() => setChoiceOpen((o) => !o)}
+          >
+            <span className="fgroup__chev" aria-hidden="true">
+              ▸
+            </span>
+            <span className="cfield__title">{cat.label}</span>
+            {value ? (
+              <span className="cfield__value">{value}</span>
+            ) : (
+              <span className="cfield__placeholder">Select…</span>
+            )}
+          </button>
+          {choiceOpen && (
+            <div className="choices" role="group" aria-label={cat.label}>
+              {groupOptions(cat.options).map(([groupName, opts]) => (
+                <div key={groupName} className="choicegrp">
+                  {groupName && <div className="choicegrp__label">{groupName}</div>}
+                  <div className="choicegrp__opts">
+                    {opts.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`choice${value === opt.value ? " is-on" : ""}`}
+                        aria-pressed={value === opt.value}
+                        title={opt.title ?? opt.value}
+                        onClick={() => onSelect(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {cat.hint && <p className="tfield__hint">{cat.hint}</p>}
             </div>
-          ))}
+          )}
         </div>
       )}
 
@@ -343,7 +367,7 @@ function Field({ cat, value, onSelect, onText }: FieldProps) {
         />
       )}
 
-      {cat.hint && !isText && <p className="tfield__hint">{cat.hint}</p>}
+      {cat.hint && !isText && !isChoice && <p className="tfield__hint">{cat.hint}</p>}
     </div>
   );
 }

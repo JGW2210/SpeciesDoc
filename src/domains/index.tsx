@@ -3,6 +3,8 @@ import type { Category, CategoryGroup } from "../data/categories";
 import { CATEGORIES, CATEGORY_GROUPS, DEFAULT_OPEN_GROUPS } from "../data/categories";
 import { GRAM_GROUPS, gramGroupOf } from "../lib/format";
 import type { Specimen } from "../types";
+import { VIRUS } from "./virus";
+import { PARASITE } from "./parasite";
 
 // A band groups the List into coloured sections (Gram reaction for bacteria,
 // genome type for viruses, etc.). `id` drives the `band--<id>` CSS class.
@@ -52,8 +54,7 @@ export const BACTERIA: DomainConfig = {
   bacterial: true,
 };
 
-// New domains (virus, parasite) are appended here in a later change.
-export const DOMAINS: DomainConfig[] = [BACTERIA];
+export const DOMAINS: DomainConfig[] = [BACTERIA, VIRUS, PARASITE];
 
 const DomainContext = createContext<DomainConfig>(BACTERIA);
 

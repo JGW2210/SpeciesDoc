@@ -1,10 +1,13 @@
+import type { DomainConfig } from "../domains";
+
 interface HeaderProps {
   count: number;
+  config: DomainConfig;
 }
 
 // The app's masthead. The mark is a stylised streak plate — three quadrant
 // streaks thinning out to single colonies, the gesture every plate starts with.
-export default function Header({ count }: HeaderProps) {
+export default function Header({ count, config }: HeaderProps) {
   return (
     <header className="masthead">
       <div className="masthead__mark" aria-hidden="true">
@@ -22,11 +25,11 @@ export default function Header({ count }: HeaderProps) {
       </div>
       <div className="masthead__text">
         <h1 className="masthead__title">SpeciesDoc</h1>
-        <p className="masthead__tag">Bench log for bacterial isolates &amp; their test panels</p>
+        <p className="masthead__tag">{config.tagline}</p>
       </div>
-      <div className="masthead__count" title="Isolates logged">
+      <div className="masthead__count" title={`${config.nounPlural} logged`}>
         <span className="masthead__count-n">{count}</span>
-        <span className="masthead__count-l">{count === 1 ? "isolate" : "isolates"}</span>
+        <span className="masthead__count-l">{count === 1 ? config.noun : config.nounPlural}</span>
       </div>
     </header>
   );

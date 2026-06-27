@@ -77,3 +77,52 @@ create policy "Public full access to board"
   to anon
   using (true)
   with check (true);
+
+-- Viruses & Parasites sections -------------------------------------------
+-- Mirror `species` with a domain-specific test panel. They reuse the `board`
+-- table above (each section stores its layout under a different id). See
+-- migrations/2026-06-27_add_virus_parasite.sql for the standalone migration.
+
+create table if not exists public.viruses (
+  id           uuid primary key default gen_random_uuid(),
+  created_at   timestamptz not null default now(),
+  genus        text not null,
+  species      text not null,
+  old_name     text,
+  lineage      jsonb,
+  genome_type  text,
+  envelope     text,
+  capsid       text,
+  morphology   text,
+  host         text,
+  transmission text,
+  tropism      text,
+  other_notes  text
+);
+create index if not exists viruses_created_at_idx on public.viruses (created_at desc);
+alter table public.viruses enable row level security;
+drop policy if exists "Public full access to viruses" on public.viruses;
+create policy "Public full access to viruses"
+  on public.viruses for all to anon using (true) with check (true);
+
+create table if not exists public.parasites (
+  id             uuid primary key default gen_random_uuid(),
+  created_at     timestamptz not null default now(),
+  genus          text not null,
+  species        text not null,
+  old_name       text,
+  lineage        jsonb,
+  parasite_group text,
+  stage          text,
+  motility       text,
+  host           text,
+  transmission   text,
+  site           text,
+  diagnostic     text,
+  other_notes    text
+);
+create index if not exists parasites_created_at_idx on public.parasites (created_at desc);
+alter table public.parasites enable row level security;
+drop policy if exists "Public full access to parasites" on public.parasites;
+create policy "Public full access to parasites"
+  on public.parasites for all to anon using (true) with check (true);

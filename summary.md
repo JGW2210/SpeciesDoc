@@ -63,12 +63,35 @@ data model, conventions, and what's done / outstanding.
 - **`board`** — single row (`id = 'main'`) holding the Board view's layout as
   `data` jsonb. Shape in `src/lib/board.ts`.
 
+## Domains (Bacteria / Viruses / Parasites)
+
+The app has **three sections**, chosen by a top-level `domainbar` toggle in
+`App.tsx`. They share the entire List/Tree/Board/form stack — only the data
+differs. Each section is a **`DomainConfig`** in `src/domains/` (`bacteria.ts`
+is inlined in `index.tsx`; `virus.ts`, `parasite.ts`) carrying: `table`,
+`boardId`, panel `categories`/`groups`, list `bands` + `bandOf`, taxonomy
+`bacterial` flag, noun/tagline/placeholders. `DomainProvider`/`useDomain`
+(React context) deliver the active config; components read panel/bands/board
+from there instead of importing the bacterial constants. Rows are the generic
+`Specimen` type (typed base + per-test index signature); read test values with
+`tv(row, key)`.
+
+- **Separate tables**: `species` / `viruses` / `parasites`, each with its own
+  test columns. The `board` table is shared, keyed per domain (`main` / `virus`
+  / `parasite`). Migration: `2026-06-27_add_virus_parasite.sql`.
+- **Taxonomy**: GBIF for all three. `buildTaxonomy(species, { detailed,
+  bacterial })` — `bacterial: false` (virus/parasite) skips the bacterial name
+  corrections + Gram unplaced fallback and uses the raw GBIF lineage.
+- Switching domains remounts the main content (`<main key={domainId}>`) so each
+  section's form/board/tree state is fresh; the active table is reloaded.
+
 ## App architecture
 
-`src/App.tsx` owns the species list (load/insert/update/delete), the GBIF
-lineage enrichment, and the **view toggle**: `list | tree | custom`. The entry
-form (`SpeciesForm`) shows only in List view (left column on desktop; a slide-up
-bottom-sheet on mobile). Tree and Board are full-width.
+`src/App.tsx` owns the active **domain**, the specimen list (load/insert/update/
+delete on `config.table`), the GBIF lineage enrichment, and the **view toggle**:
+`list | tree | custom`. The entry form (`SpeciesForm`) shows only in List view
+(left column on desktop; a slide-up bottom-sheet on mobile). Tree and Board are
+full-width.
 
 ### Key files
 

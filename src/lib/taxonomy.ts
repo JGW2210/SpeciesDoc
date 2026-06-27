@@ -176,10 +176,17 @@ export function resolveClass(genus: string, gbifClass?: string | null): string |
 // Order/family are intentionally skipped to keep the radial tree readable like
 // the reference figure; the full lineage is still shown in the detail panel.
 // `detailed` inserts a full class + order layer for every placed isolate (used
-// by the dendrogram). The default keeps the lean topology — a class node only
-// for the Proteobacteria α/β/γ split — used by the radial and outline views.
-export function buildTaxonomy(species: Species[], detailed = false): TaxNode {
-  const root: TaxNode = { name: "Bacteria", rank: "root", children: [] };
+// by the dendrogram). `bacterial` (default true) applies the bacterial name
+// corrections + Gram-based unplaced fallback; non-bacterial domains (viruses,
+// parasites) use the raw GBIF lineage and a plain "Unplaced" fallback.
+export interface TaxonomyOptions {
+  detailed?: boolean;
+  bacterial?: boolean;
+}
+
+export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): TaxNode {
+  const { detailed = false, bacterial = true } = opts;
+  const root: TaxNode = { name: bacterial ? "Bacteria" : "Root", rank: "root", children: [] };
 
   const child = (parent: TaxNode, name: string, rank: TaxNode["rank"], tag?: string): TaxNode => {
     parent.children = parent.children ?? [];
@@ -196,20 +203,23 @@ export function buildTaxonomy(species: Species[], detailed = false): TaxNode {
     let node = root;
 
     if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
-      node = child(node, resolvePhylum(s.genus, lin.phylum), "phylum");
-      const cls = resolveClass(s.genus, lin.class);
+      const phylum = bacterial
+        ? resolvePhylum(s.genus, lin.phylum)
+        : lin.phylum || lin.kingdom || "Unplaced";
+      node = child(node, phylum, "phylum");
+      const cls = bacterial ? resolveClass(s.genus, lin.class) : (lin.class ?? null);
       if (detailed) {
         // Show class for every phylum, plus the order, for finer grouping.
-        if (cls) node = child(node, cls, "class", GREEK[cls]);
-        const ord = modernOrder(lin.order);
+        if (cls) node = child(node, cls, "class", bacterial ? GREEK[cls] : undefined);
+        const ord = bacterial ? modernOrder(lin.order) : (lin.order ?? null);
         if (ord) node = child(node, ord, "order");
-      } else if (cls && GREEK[cls]) {
+      } else if (bacterial && cls && GREEK[cls]) {
         node = child(node, cls, "class", GREEK[cls]);
       }
       // Use the entered (current) genus so the tree shows modern names, even when
       // GBIF placed the isolate via an old synonym.
       node = child(node, s.genus, "genus");
-    } else {
+    } else if (bacterial) {
       // No lineage yet: fall back to a Gram-based grouping so the isolate still
       // appears on the tree.
       const g = gramGroupOf(s);
@@ -222,6 +232,9 @@ export function buildTaxonomy(species: Species[], detailed = false): TaxNode {
               ? "Unplaced · Acid-fast"
               : "Unplaced";
       node = child(node, label, "phylum");
+      node = child(node, s.genus, "genus");
+    } else {
+      node = child(node, "Unplaced", "phylum");
       node = child(node, s.genus, "genus");
     }
 

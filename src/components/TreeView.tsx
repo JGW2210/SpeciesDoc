@@ -110,7 +110,7 @@ function findByKey(node: TaxNode, phylum: string, target: string): TaxNode | nul
   return null;
 }
 
-function genusKeys(species: Species[]): { all: string[]; big: Set<string> } {
+function genusKeys(species: Species[], bacterial: boolean): { all: string[]; big: Set<string> } {
   const all: string[] = [];
   const big = new Set<string>();
   const walk = (n: TaxNode, phylum: string) => {
@@ -122,12 +122,12 @@ function genusKeys(species: Species[]): { all: string[]; big: Set<string> } {
     const nextPhylum = n.rank === "phylum" ? n.name : phylum;
     n.children?.forEach((c) => walk(c, nextPhylum));
   };
-  walk(buildTaxonomy(species), "");
+  walk(buildTaxonomy(species, { bacterial }), "");
   return { all, big };
 }
 
-function focusCrumb(focus: string | null): { label: string; key: string | null }[] {
-  const trail: { label: string; key: string | null }[] = [{ label: "Bacteria", key: null }];
+function focusCrumb(focus: string | null, rootLabel: string): { label: string; key: string | null }[] {
+  const trail: { label: string; key: string | null }[] = [{ label: rootLabel, key: null }];
   if (!focus) return trail;
   if (focus.startsWith("p:")) {
     trail.push({ label: focus.slice(2), key: focus });
@@ -145,7 +145,7 @@ const phylumOf = (focus: string | null) =>
 
 // Shared interaction state for both SVG layouts: collapse overrides, focus
 // (re-root), and pan/zoom.
-function useTreeNav(species: Species[]) {
+function useTreeNav(species: Species[], bacterial: boolean) {
   const [overrides, setOverrides] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<string | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
@@ -160,7 +160,7 @@ function useTreeNav(species: Species[]) {
       return next;
     });
 
-  const gk = useMemo(() => genusKeys(species), [species]);
+  const gk = useMemo(() => genusKeys(species, bacterial), [species, bacterial]);
   const expandAll = () => setOverrides(new Set(gk.big));
   const collapseAll = () => setOverrides(new Set(gk.all.filter((k) => !gk.big.has(k))));
   const resetLayout = () => {
@@ -216,8 +216,9 @@ function useFit(nav: TreeNav, fit: ZoomTransform | null, fitSig: string, q: stri
 }
 
 function TreeControls({ nav }: { nav: TreeNav }) {
+  const { label } = useDomain();
   const { transform, overrides, focus } = nav;
-  const crumb = focusCrumb(focus);
+  const crumb = focusCrumb(focus, label);
   return (
     <>
       {focus && (
@@ -402,13 +403,14 @@ interface ViewProps {
 }
 
 function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
-  const nav = useTreeNav(species);
+  const { bacterial } = useDomain();
+  const nav = useTreeNav(species, bacterial);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
   const focusPhylum = phylumOf(focus);
 
   const { leaves, links, hulls, handles, fit, fitSig } = useMemo(() => {
-    const full = collapse(buildTaxonomy(species), "", overrides);
+    const full = collapse(buildTaxonomy(species, { bacterial }), "", overrides);
     const rootData = focus ? findByKey(full, "", focus) ?? full : full;
     const focused = rootData !== full;
     const root = cluster<TaxNode>()
@@ -477,7 +479,7 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
     }
 
     return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes, fit, fitSig };
-  }, [species, overrides, focus, q]);
+  }, [species, overrides, focus, q, bacterial]);
 
   useFit(nav, fit, fitSig, q);
 
@@ -672,14 +674,15 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
 }
 
 function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
-  const nav = useTreeNav(species);
+  const { bacterial } = useDomain();
+  const nav = useTreeNav(species, bacterial);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
   const focusPhylum = phylumOf(focus);
 
   const { leaves, links, internals, handles, vbW, vbH, fit, fitSig } = useMemo(() => {
     // The dendrogram uses the detailed topology: class + order for every isolate.
-    const full = collapse(buildTaxonomy(species, true), "", overrides);
+    const full = collapse(buildTaxonomy(species, { detailed: true, bacterial }), "", overrides);
     const rootData = focus ? findByKey(full, "", focus) ?? full : full;
 
     const hroot = hierarchy(rootData);
@@ -743,7 +746,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
       fit,
       fitSig,
     };
-  }, [species, overrides, focus, q]);
+  }, [species, overrides, focus, q, bacterial]);
 
   useFit(nav, fit, fitSig, q);
 
@@ -905,17 +908,20 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
 }
 
 function Lineagecrumb({ species }: { species: Species }) {
+  const { bacterial } = useDomain();
   const lin = species.lineage;
   if (!lin || lin.matchType === "NONE") {
-    return <p className="treedetail__crumb treedetail__crumb--none">No GBIF lineage — grouped by Gram.</p>;
+    return (
+      <p className="treedetail__crumb treedetail__crumb--none">
+        No GBIF lineage{bacterial ? " — grouped by Gram" : ""}.
+      </p>
+    );
   }
-  const parts = [
-    resolvePhylum(species.genus, lin.phylum),
-    resolveClass(species.genus, lin.class),
-    lin.order,
-    lin.family,
-    lin.genus,
-  ].filter(Boolean);
+  const parts = (
+    bacterial
+      ? [resolvePhylum(species.genus, lin.phylum), resolveClass(species.genus, lin.class), lin.order, lin.family, lin.genus]
+      : [lin.kingdom, lin.phylum, lin.class, lin.order, lin.family, lin.genus]
+  ).filter(Boolean);
   return (
     <p className="treedetail__crumb">
       {parts.map((p, i) => (

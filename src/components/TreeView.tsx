@@ -17,9 +17,9 @@ import {
   type TaxNode,
 } from "../lib/taxonomy";
 import { binomial } from "../lib/format";
-import { CATEGORIES } from "../data/categories";
+import { useDomain } from "../domains";
 import OutlineTree from "./OutlineTree";
-import type { Species } from "../types";
+import { tv, type Species } from "../types";
 
 const COLLAPSE_MIN = 3; // genera with this many isolates auto-collapse into one node
 
@@ -928,12 +928,12 @@ function Lineagecrumb({ species }: { species: Species }) {
   );
 }
 
-const CHIP_KEYS = CATEGORIES.filter((c) => c.key !== "other_notes");
-
 function Readout({ species }: { species: Species }) {
-  const results = CHIP_KEYS.map((cat) => ({ cat, value: species[cat.key] })).filter(
-    (r): r is { cat: (typeof CHIP_KEYS)[number]; value: string } => !!r.value && r.value.trim() !== "",
-  );
+  const { categories } = useDomain();
+  const results = categories
+    .filter((c) => c.key !== "other_notes")
+    .map((cat) => ({ cat, value: tv(species, cat.key) }))
+    .filter((r) => r.value.trim() !== "");
   if (results.length === 0) {
     return <p className="treedetail__crumb treedetail__crumb--none">No test results recorded.</p>;
   }

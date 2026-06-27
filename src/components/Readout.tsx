@@ -1,9 +1,6 @@
-import { CATEGORIES } from "../data/categories";
 import { polarityOf } from "../lib/format";
-import type { Species } from "../types";
-
-// Tests shown as compact readout chips (everything except the free-text notes).
-const CHIP_KEYS = CATEGORIES.filter((c) => c.key !== "other_notes");
+import { useDomain } from "../domains";
+import { tv, type Species } from "../types";
 
 interface ReadoutProps {
   species: Species;
@@ -13,9 +10,12 @@ interface ReadoutProps {
 // The List-view test readout: one coloured chip per recorded test. Shared by the
 // list cards, the tree detail panel, and the board chips.
 export default function Readout({ species, emptyText }: ReadoutProps) {
-  const results = CHIP_KEYS.map((cat) => ({ cat, value: species[cat.key] })).filter(
-    (r): r is { cat: (typeof CHIP_KEYS)[number]; value: string } => !!r.value && r.value.trim() !== "",
-  );
+  const { categories } = useDomain();
+  // Tests shown as compact readout chips (everything except the free-text notes).
+  const chipKeys = categories.filter((c) => c.key !== "other_notes");
+  const results = chipKeys
+    .map((cat) => ({ cat, value: tv(species, cat.key) }))
+    .filter((r) => r.value.trim() !== "");
 
   if (results.length === 0) {
     return <p className="card__none">{emptyText ?? "No test results recorded yet."}</p>;

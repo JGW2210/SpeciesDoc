@@ -1,4 +1,4 @@
-import type { Species } from "../types";
+import { tv, type Species } from "../types";
 
 export type GramGroupId = "positive" | "negative" | "acidfast" | "other";
 
@@ -17,7 +17,7 @@ export const GRAM_GROUPS: GramGroup[] = [
 ];
 
 export function gramGroupOf(s: Species): GramGroupId {
-  const g = (s.gram ?? "").trim().toLowerCase();
+  const g = tv(s, "gram").trim().toLowerCase();
   if (g.startsWith("acid") || g === "afb") return "acidfast";
   if (g.startsWith("pos") || g === "+") return "positive";
   if (g.startsWith("neg") || g === "−" || g === "-") return "negative";

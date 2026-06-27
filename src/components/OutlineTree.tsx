@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { buildTaxonomy, gatherIsolates, type TaxNode } from "../lib/taxonomy";
 import { binomial } from "../lib/format";
+import { useDomain } from "../domains";
 import type { Species } from "../types";
 
 interface OutlineTreeProps {
@@ -24,7 +25,8 @@ function subtreeMatches(node: TaxNode, q: string): boolean {
 // phylum → class → genus → isolate, each branch collapsible. Searching filters to
 // matching branches and auto-expands them.
 export default function OutlineTree({ species, query, selectedId, onSelect }: OutlineTreeProps) {
-  const root = useMemo(() => buildTaxonomy(species), [species]);
+  const { bacterial } = useDomain();
+  const root = useMemo(() => buildTaxonomy(species, { bacterial }), [species, bacterial]);
   const q = query.trim().toLowerCase();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 

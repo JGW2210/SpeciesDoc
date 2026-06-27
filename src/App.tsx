@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import { fetchLineage } from "./lib/gbif";
-import { DomainProvider, BACTERIA } from "./domains";
+import { DomainProvider, DOMAINS, BACTERIA, type DomainId } from "./domains";
 import type { Species, SpeciesDraft } from "./types";
 import Header from "./components/Header";
 import SetupBanner from "./components/SetupBanner";
@@ -13,8 +13,8 @@ import CustomView from "./components/CustomView";
 type View = "list" | "tree" | "custom";
 
 export default function App() {
-  // Fixed to bacteria for now; the domain toggle wires this to state next.
-  const config = BACTERIA;
+  const [domainId, setDomainId] = useState<DomainId>("bacteria");
+  const config = DOMAINS.find((d) => d.id === domainId) ?? BACTERIA;
   const [species, setSpecies] = useState<Species[]>([]);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export default function App() {
       setSpecies((data ?? []) as Species[]);
     }
     setLoading(false);
-  }, []);
+  }, [config.table]);
 
   useEffect(() => {
     void load();
@@ -64,7 +64,7 @@ export default function App() {
     if (!error && data) {
       setSpecies((prev) => prev.map((x) => (x.id === s.id ? (data as Species) : x)));
     }
-  }, []);
+  }, [config.table]);
 
   // Insert a new isolate or update the one being edited.
   const handleSubmit = useCallback(
@@ -94,7 +94,7 @@ export default function App() {
       setFormOpen(false);
       void enrichOne(saved);
     },
-    [enrichOne],
+    [enrichOne, config.table],
   );
 
   // Backfill lineage for every isolate that doesn't have a match yet.
@@ -133,13 +133,38 @@ export default function App() {
         setSpecies(prev); // roll back
       }
     },
-    [species, editing, closeForm],
+    [species, editing, closeForm, config.table],
   );
+
+  // Switch section: clear current state and let the load effect refill.
+  const switchDomain = useCallback((id: DomainId) => {
+    setDomainId(id);
+    setEditing(null);
+    setView("list");
+    setFormOpen(false);
+    setSpecies([]);
+    setLoading(isSupabaseConfigured);
+  }, []);
 
   return (
     <DomainProvider config={config}>
     <div className="shell">
-      <Header count={species.length} />
+      <Header count={species.length} config={config} />
+
+      <div className="domainbar" role="tablist" aria-label="Section">
+        {DOMAINS.map((d) => (
+          <button
+            key={d.id}
+            type="button"
+            role="tab"
+            aria-selected={domainId === d.id}
+            className={`domainbar__btn${domainId === d.id ? " is-on" : ""}`}
+            onClick={() => switchDomain(d.id)}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
 
       {!isSupabaseConfigured && <SetupBanner />}
 
@@ -179,7 +204,7 @@ export default function App() {
         </button>
       </div>
 
-      <main className={`layout${view !== "list" ? " layout--full" : ""}`}>
+      <main key={domainId} className={`layout${view !== "list" ? " layout--full" : ""}`}>
         {view === "list" && (
           <section className={`layout__form${formOpen ? " is-open" : ""}`}>
             <SpeciesForm
@@ -232,7 +257,7 @@ export default function App() {
             aria-expanded={formOpen}
             onClick={() => (formOpen ? closeForm() : setFormOpen(true))}
           >
-            {formOpen ? "Close" : editing ? "Edit isolate" : "＋  Log an isolate"}
+            {formOpen ? "Close" : editing ? `Edit ${config.noun}` : `＋  Add ${config.noun}`}
           </button>
         </div>
       )}

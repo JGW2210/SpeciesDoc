@@ -1041,7 +1041,8 @@ textarea {
   padding: 7px 14px;
   border-radius: 999px;
   margin-bottom: 14px;
-  border: 1px solid;
+  border: 1px solid var(--slate-line); /* neutral default for non-bacterial bands */
+  background: var(--slate-soft);
 }
 .band--positive .band__head {
   background: var(--violet-soft);
@@ -1066,6 +1067,7 @@ textarea {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin: 0;
+  color: var(--slate); /* neutral default; bacterial bands override below */
 }
 .band--positive .band__title {
   color: var(--violet);
@@ -1341,6 +1343,38 @@ textarea {
 }
 
 /* ------------------------------------------------------- view toggle ------ */
+/* top-level section toggle: Bacteria / Viruses / Parasites */
+.domainbar {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 18px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.domainbar__btn {
+  flex: 1 1 0;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.domainbar__btn:hover {
+  color: var(--accent-deep);
+}
+.domainbar__btn.is-on {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+
 .viewbar {
   display: inline-flex;
   gap: 2px;

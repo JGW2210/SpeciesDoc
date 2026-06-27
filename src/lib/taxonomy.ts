@@ -78,6 +78,22 @@ export function modernPhylum(name: string | null | undefined): string {
   return MODERN_PHYLUM[base] ?? base;
 }
 
+// GBIF/GTDB still returns superseded order names; map them to the current
+// validly published name (by priority/ICNP). Keys are former names. Add entries
+// as more surface. GTDB split suffixes (Rhizobiales_A) are stripped first, so a
+// split order folds back into one node.
+const MODERN_ORDER: Record<string, string> = {
+  Rhizobiales: "Hyphomicrobiales", // Hyphomicrobiales has priority (2020)
+  Enterobacteriales: "Enterobacterales", // emended form (2016)
+  Corynebacteriales: "Mycobacteriales", // Mycobacteriales has priority
+};
+
+export function modernOrder(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const base = name.replace(/_[A-Z]+$/, "");
+  return MODERN_ORDER[base] ?? base;
+}
+
 // GBIF/GTDB nests some genera inside a broader phylum that the ICNP recognises
 // separately. Pin these to their ICNP phylum, keyed by lowercase genus. The
 // classic case is the wall-less Mollicutes (Mycoplasma & relatives), which GTDB
@@ -183,7 +199,8 @@ export function buildTaxonomy(species: Species[], detailed = false): TaxNode {
       if (detailed) {
         // Show class for every phylum, plus the order, for finer grouping.
         if (cls) node = child(node, cls, "class", GREEK[cls]);
-        if (lin.order) node = child(node, lin.order, "order");
+        const ord = modernOrder(lin.order);
+        if (ord) node = child(node, ord, "order");
       } else if (cls && GREEK[cls]) {
         node = child(node, cls, "class", GREEK[cls]);
       }

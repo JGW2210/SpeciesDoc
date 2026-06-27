@@ -86,6 +86,8 @@ const MODERN_ORDER: Record<string, string> = {
   Rhizobiales: "Hyphomicrobiales", // Hyphomicrobiales has priority (2020)
   Enterobacteriales: "Enterobacterales", // emended form (2016)
   Corynebacteriales: "Mycobacteriales", // Mycobacteriales has priority
+  Clostridiales: "Eubacteriales", // Eubacteriales (1938) has priority
+  Xanthomonadales: "Lysobacterales", // Lysobacterales (1978) has priority
 };
 
 export function modernOrder(name: string | null | undefined): string | null {

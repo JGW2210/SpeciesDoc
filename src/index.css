@@ -996,6 +996,11 @@ textarea {
   border-color: var(--accent);
   color: #fff;
 }
+/* the "Other" bucket reads as a meta-option */
+.fopt--other {
+  font-style: italic;
+  border-style: dashed;
+}
 
 .activefilters {
   display: flex;

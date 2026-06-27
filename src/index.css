@@ -247,6 +247,11 @@ textarea {
     padding-bottom: 88px;
   }
 
+  /* the docked detail panel floats above the fixed bottom bar */
+  .treedetail {
+    bottom: 80px;
+  }
+
   /* the tree toolbar stacks so the search + layout toggle stay usable */
   .tree__bar {
     flex-direction: column;
@@ -1808,17 +1813,32 @@ textarea {
 }
 
 /* node detail drawer */
+/* Detail panel: a card docked centre-bottom of the viewport, floating over the
+   UI so it never collides with the tree's top-right controls. */
 .treedetail {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: min(310px, calc(100% - 28px));
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  margin-inline: auto;
+  width: min(620px, calc(100% - 32px));
+  z-index: 60;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: 0 14px 40px -18px rgba(20, 23, 29, 0.5);
-  padding: 16px 16px 14px;
-  animation: rise 0.2s ease both;
+  box-shadow: 0 18px 50px -16px rgba(20, 23, 29, 0.55);
+  padding: 16px 18px 14px;
+  animation: dockup 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dockup {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .treedetail__close {
   position: absolute;

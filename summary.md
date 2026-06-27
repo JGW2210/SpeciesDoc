@@ -110,9 +110,13 @@ full-width.
 - `src/components/SpeciesForm.tsx` — entry/edit form. Collapsible test sections;
   the `choice` (motility) field is itself collapsible (closed by default).
 - `src/components/SpeciesList.tsx` — grouped by staining band (Gram-positive /
-  Gram-negative / **Acid-fast** / variable & untyped). Name search, **ID filter** (date-added presets + custom
+  Gram-negative / **Acid-fast** / variable & untyped; non-bacterial domains use
+  their own bands). Name search, **ID filter** (date-added presets + custom
   range, plus per-test value filters), **Collapse all / Expand all** (name-only
-  cards), **Sort: Newest / A–Z**.
+  cards), **Sort: Newest / A–Z**. The ID filter covers fixed-option tests **and
+  free-text tests with suggestions** — each suggestion is a chip plus an **Other**
+  bucket (any entered value that isn't a default; `OTHER` sentinel in the
+  component).
 - `src/components/SpeciesCard.tsx` — one isolate; collapsible to name-only via a
   chevron; date sits at the card's bottom-right; Edit/Delete (inline confirm).
 - `src/components/Readout.tsx` — shared test-chip readout (used by the card and

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { tv, type Species, type TestKey } from "../types";
+import type { Category } from "../data/categories";
 import { binomial } from "../lib/format";
 import { useDomain } from "../domains";
 import SpeciesCard from "./SpeciesCard";
@@ -8,6 +9,35 @@ type Filters = Partial<Record<TestKey, string>>;
 type DatePreset = "any" | "today" | "7d" | "30d" | "custom";
 
 const DAY = 86_400_000;
+
+// Sentinel filter value: any entered value that isn't one of the defaults.
+const OTHER = "__other__";
+
+interface FilterOpt {
+  value: string;
+  label: string;
+  title?: string;
+  group?: string;
+}
+
+// Filter chips for a category: its fixed options, or — for free-text fields with
+// quick-pick suggestions — each suggestion plus an "Other" bucket.
+function filterOptionsFor(cat: Category): FilterOpt[] {
+  if (cat.options) return cat.options;
+  if (cat.suggestions) {
+    return [
+      ...cat.suggestions.map((s) => ({ value: s, label: s })),
+      { value: OTHER, label: "Other", title: "Any other entered value" },
+    ];
+  }
+  return [];
+}
+
+// The set of "default" values that count as recognised (so anything else is Other).
+function defaultsFor(cat: Category): string[] {
+  if (cat.options) return cat.options.map((o) => o.value);
+  return cat.suggestions ?? [];
+}
 
 // Local YYYY-MM-DD for a date (matches what <input type="date"> uses).
 function isoDay(d: Date): string {
@@ -33,8 +63,16 @@ export default function SpeciesList({
   onDelete,
 }: SpeciesListProps) {
   const { categories, bands, bandOf } = useDomain();
-  // Only the discrete tests (those with fixed options) make sense as filters.
-  const FILTERABLE = useMemo(() => categories.filter((c) => !!c.options), [categories]);
+  // Filterable: fixed-option tests, plus free-text tests that carry suggestions.
+  const FILTERABLE = useMemo(
+    () => categories.filter((c) => !!c.options || !!c.suggestions),
+    [categories],
+  );
+  const catByKey = useMemo(() => {
+    const m: Record<string, Category> = {};
+    for (const c of categories) m[c.key] = c;
+    return m;
+  }, [categories]);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Filters>({});
   const [filterOpen, setFilterOpen] = useState(false);
@@ -86,11 +124,19 @@ export default function SpeciesList({
     const q = query.trim().toLowerCase();
     const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
     const toTs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
-    return species.filter((s) => {
+    return species.filter((s: Species) => {
       if (q && !binomial(s.genus, s.species).toLowerCase().includes(q)) return false;
       for (const key of Object.keys(filters) as TestKey[]) {
-        const want = filters[key]!.toLowerCase();
-        if (tv(s, key).trim().toLowerCase() !== want) return false;
+        const want = filters[key]!;
+        const val = tv(s, key).trim();
+        if (want === OTHER) {
+          // "Other" = a non-empty value that isn't one of the recognised defaults.
+          const cat = catByKey[key];
+          const defaults = cat ? defaultsFor(cat) : [];
+          if (val === "" || defaults.some((d) => d.toLowerCase() === val.toLowerCase())) return false;
+        } else if (val.toLowerCase() !== want.toLowerCase()) {
+          return false;
+        }
       }
       if (fromTs !== null || toTs !== null) {
         const ts = new Date(s.created_at).getTime();
@@ -99,7 +145,7 @@ export default function SpeciesList({
       }
       return true;
     });
-  }, [species, query, filters, dateFrom, dateTo]);
+  }, [species, query, filters, dateFrom, dateTo, catByKey]);
 
   const grouped = useMemo(() => {
     const arranged =
@@ -245,16 +291,17 @@ export default function SpeciesList({
             <div className="fitem__label">ID characteristics</div>
             <div className="filterpanel__grid">
               {FILTERABLE.map((cat) => {
-                const wide = cat.options!.length > 4;
+                const opts = filterOptionsFor(cat);
+                const wide = opts.length > 4;
                 return (
                   <div key={cat.key} className={`fitem${wide ? " fitem--wide" : ""}`}>
                     <div className="fitem__sublabel">{cat.label}</div>
                     <div className="fitem__opts">
-                      {cat.options!.map((opt) => (
+                      {opts.map((opt) => (
                         <button
                           key={opt.value}
                           type="button"
-                          className={`fopt${filters[cat.key] === opt.value ? " is-on" : ""}`}
+                          className={`fopt${filters[cat.key] === opt.value ? " is-on" : ""}${opt.value === OTHER ? " fopt--other" : ""}`}
                           title={
                             opt.group ? `${opt.group} — ${opt.title ?? opt.value}` : opt.title ?? opt.value
                           }
@@ -302,7 +349,7 @@ export default function SpeciesList({
                 title="Remove filter"
               >
                 <span className="activefilters__k">{cat.short}</span>
-                <span className="activefilters__v">{filters[key]}</span>
+                <span className="activefilters__v">{filters[key] === OTHER ? "Other" : filters[key]}</span>
                 <span className="activefilters__x">×</span>
               </button>
             );

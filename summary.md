@@ -142,9 +142,14 @@ bottom-sheet on mobile). Tree and Board are full-width.
     (`PHYLUM_BY_GENUS`). Pins the wall-less Mollicutes (Mycoplasma, Ureaplasma,
     Mycoplasmoides, …) to their own ICNP phylum **Mycoplasmatota** instead of the
     Bacillota nesting GBIF/GTDB returns. Falls through to `modernPhylum()`.
-  - Both override maps are keyed by **lowercase entered genus** and are easy to
-    extend as more discrepancies surface — a typo in the entered genus makes a
-    row miss its override, so name spelling matters.
+  - `modernOrder(name)` — renames superseded **order** names (Rhizobiales →
+    Hyphomicrobiales, Enterobacteriales → Enterobacterales, Corynebacteriales →
+    Mycobacteriales) and strips GTDB `_A`/`_B` suffixes; applied where the
+    **detailed dendrogram** inserts order nodes. Extend `MODERN_ORDER` as more
+    old names surface.
+  - Both genus override maps are keyed by **lowercase entered genus** and are
+    easy to extend as more discrepancies surface — a typo in the entered genus
+    makes a row miss its override, so name spelling matters.
 - `src/components/CustomView.tsx` — the **Board**. User-defined categories →
   subcategories (`src/lib/board.ts` types). Add/rename/delete categories &
   subs, custom colours (swatch picker), collapsible. Drag isolates from a

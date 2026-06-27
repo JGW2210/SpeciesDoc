@@ -11,38 +11,38 @@ export interface Lineage {
   fetchedAt: string;
 }
 
-// Database row shape. Test fields are nullable free text.
-export interface Species {
+// A logged specimen — a bacterial isolate, virus, or parasite. The base columns
+// are shared across every domain; each domain's test-panel results live in extra
+// nullable text columns addressed by key (see the domain config + `tv()`).
+export interface Specimen {
   id: string;
   created_at: string;
   genus: string;
   species: string;
   old_name: string | null; // optional synonym / former name, used for lineage fallback
   lineage: Lineage | null;
-  gram: string | null;
-  oxidase: string | null;
-  catalase: string | null;
-  indole: string | null;
-  fermentation: string | null;
-  distinctive_shape: string | null;
-  motility: string | null;
-  haemolysis: string | null;
-  coagulase: string | null;
-  aesculin: string | null;
-  pyr_pyz: string | null;
-  spores: string | null;
-  dnase: string | null;
-  tributyrin: string | null;
-  hugh_leifson_of: string | null;
-  atmosphere: string | null;
-  methyl_red: string | null;
-  voges_proskauer: string | null;
-  citrate: string | null;
-  other_notes: string | null;
+  // per-domain test columns (gram, genome_type, life_cycle, … other_notes)
+  [test: string]: string | null | Lineage;
 }
 
 // Everything the form collects and writes (lineage is fetched, not entered).
-export type SpeciesDraft = Omit<Species, "id" | "created_at" | "lineage">;
+// Declared explicitly (not via Omit) so the base name fields keep their precise
+// types alongside the per-test index signature.
+export interface SpecimenDraft {
+  genus: string;
+  species: string;
+  old_name: string | null;
+  [test: string]: string | null;
+}
 
-// The set of test-result column keys (excludes the name fields).
-export type TestKey = Exclude<keyof SpeciesDraft, "genus" | "species" | "old_name">;
+// Read a test-panel value as a plain string ("" when unset / not a string).
+export function tv(row: Specimen | SpecimenDraft, key: string): string {
+  const v = (row as Specimen)[key];
+  return typeof v === "string" ? v : "";
+}
+
+// Back-compat aliases: most of the app was written against "Species". A
+// specimen is the generic row; a test key is just a column name string.
+export type Species = Specimen;
+export type SpeciesDraft = SpecimenDraft;
+export type TestKey = string;

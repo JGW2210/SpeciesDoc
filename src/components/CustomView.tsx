@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { binomial } from "../lib/format";
+import { useDomain } from "../domains";
 import Readout from "./Readout";
 import {
   EMPTY_BOARD,
@@ -14,8 +15,6 @@ import {
 } from "../lib/board";
 import type { Species } from "../types";
 
-const BOARD_ID = "main";
-
 // subId null = held directly on the category (no subcategory).
 interface DragData {
   isoId: string;
@@ -28,6 +27,7 @@ interface CustomViewProps {
 }
 
 export default function CustomView({ species, onEdit }: CustomViewProps) {
+  const { boardId } = useDomain();
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [query, setQuery] = useState("");
   const [overSub, setOverSub] = useState<string | null>(null);
@@ -55,7 +55,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
     if (!supabase) return false;
     const { error } = await supabase
       .from("board")
-      .upsert({ id: BOARD_ID, data: b, updated_at: new Date().toISOString() });
+      .upsert({ id: boardId, data: b, updated_at: new Date().toISOString() });
     return !error;
   };
 
@@ -67,7 +67,7 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
         loaded.current = true;
         return;
       }
-      const { data } = await supabase.from("board").select("data").eq("id", BOARD_ID).maybeSingle();
+      const { data } = await supabase.from("board").select("data").eq("id", boardId).maybeSingle();
       if (active && data?.data) setBoard(normalizeBoard(data.data as Board));
       loaded.current = true;
     })();

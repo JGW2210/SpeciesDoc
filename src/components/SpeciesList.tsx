@@ -1,11 +1,8 @@
 import { useMemo, useState } from "react";
-import type { Species, TestKey } from "../types";
-import { GRAM_GROUPS, gramGroupOf, binomial } from "../lib/format";
-import { CATEGORIES } from "../data/categories";
+import { tv, type Species, type TestKey } from "../types";
+import { binomial } from "../lib/format";
+import { useDomain } from "../domains";
 import SpeciesCard from "./SpeciesCard";
-
-// Only the discrete tests (those with fixed options) make sense as filters.
-const FILTERABLE = CATEGORIES.filter((c) => !!c.options);
 
 type Filters = Partial<Record<TestKey, string>>;
 type DatePreset = "any" | "today" | "7d" | "30d" | "custom";
@@ -35,6 +32,9 @@ export default function SpeciesList({
   onEdit,
   onDelete,
 }: SpeciesListProps) {
+  const { categories, bands, bandOf } = useDomain();
+  // Only the discrete tests (those with fixed options) make sense as filters.
+  const FILTERABLE = useMemo(() => categories.filter((c) => !!c.options), [categories]);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Filters>({});
   const [filterOpen, setFilterOpen] = useState(false);
@@ -90,7 +90,7 @@ export default function SpeciesList({
       if (q && !binomial(s.genus, s.species).toLowerCase().includes(q)) return false;
       for (const key of Object.keys(filters) as TestKey[]) {
         const want = filters[key]!.toLowerCase();
-        if ((s[key] ?? "").trim().toLowerCase() !== want) return false;
+        if (tv(s, key).trim().toLowerCase() !== want) return false;
       }
       if (fromTs !== null || toTs !== null) {
         const ts = new Date(s.created_at).getTime();
@@ -108,11 +108,11 @@ export default function SpeciesList({
             binomial(a.genus, a.species).localeCompare(binomial(b.genus, b.species)),
           )
         : filtered; // "added" keeps the created_at-desc order from the source
-    return GRAM_GROUPS.map((group) => ({
+    return bands.map((group) => ({
       group,
-      items: arranged.filter((s) => gramGroupOf(s) === group.id),
+      items: arranged.filter((s) => bandOf(s) === group.id),
     }));
-  }, [filtered, sort]);
+  }, [filtered, sort, bands, bandOf]);
 
   if (loading) {
     return <p className="list__status">Loading the bench log…</p>;

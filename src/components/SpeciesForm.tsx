@@ -1,10 +1,15 @@
-import { useEffect, useState } from "react";
-import { CATEGORY_BY_KEY, CATEGORY_GROUPS, DEFAULT_OPEN_GROUPS } from "../data/categories";
+import { useEffect, useMemo, useState } from "react";
 import type { Category, QuickOption } from "../data/categories";
-import type { Species, SpeciesDraft, TestKey } from "../types";
+import { useDomain } from "../domains";
+import { tv, type Species, type SpeciesDraft, type TestKey } from "../types";
 import { binomial } from "../lib/format";
 
-const hasValue = (v: string | null | undefined) => v != null && String(v).trim() !== "";
+// A blank draft for the active domain: base name fields plus a null per test.
+function buildEmpty(categories: Category[]): SpeciesDraft {
+  const draft: SpeciesDraft = { genus: "", species: "", old_name: null };
+  for (const c of categories) draft[c.key] = null;
+  return draft;
+}
 
 // Bucket options by their `group`, preserving first-seen order of both groups
 // and options. Options without a group fall under "".
@@ -22,36 +27,10 @@ function groupOptions(options: QuickOption[]): [string, QuickOption[]][] {
   return order.map((g) => [g, map.get(g)!]);
 }
 
-const EMPTY: SpeciesDraft = {
-  genus: "",
-  species: "",
-  old_name: null,
-  gram: null,
-  oxidase: null,
-  catalase: null,
-  indole: null,
-  fermentation: null,
-  distinctive_shape: null,
-  motility: null,
-  haemolysis: null,
-  coagulase: null,
-  aesculin: null,
-  pyr_pyz: null,
-  spores: null,
-  dnase: null,
-  tributyrin: null,
-  hugh_leifson_of: null,
-  atmosphere: null,
-  methyl_red: null,
-  voges_proskauer: null,
-  citrate: null,
-  other_notes: null,
-};
-
 // Strip the server-managed fields so an existing row can seed the form.
 function toDraft(s: Species): SpeciesDraft {
   const { id: _id, created_at: _created, lineage: _lineage, ...rest } = s;
-  return rest;
+  return rest as SpeciesDraft;
 }
 
 interface SpeciesFormProps {
@@ -71,10 +50,18 @@ export default function SpeciesForm({
   onCancelEdit,
   disabled,
 }: SpeciesFormProps) {
+  const { categories, groups, defaultOpenGroups, genusPlaceholder, speciesPlaceholder } = useDomain();
+  const catByKey = useMemo(() => {
+    const m: Record<string, Category> = {};
+    for (const c of categories) m[c.key] = c;
+    return m;
+  }, [categories]);
+  const EMPTY = useMemo(() => buildEmpty(categories), [categories]);
+
   const [draft, setDraft] = useState<SpeciesDraft>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(DEFAULT_OPEN_GROUPS));
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(defaultOpenGroups));
 
   // Load the selected row into the form when entering edit mode; clear on exit.
   // When editing, also open any group that already holds data so it's visible.
@@ -82,14 +69,14 @@ export default function SpeciesForm({
     const next = editing ? toDraft(editing) : EMPTY;
     setDraft(next);
     setError(null);
-    const open = new Set(DEFAULT_OPEN_GROUPS);
+    const open = new Set(defaultOpenGroups);
     if (editing) {
-      for (const g of CATEGORY_GROUPS) {
-        if (g.keys.some((k) => hasValue(next[k]))) open.add(g.name);
+      for (const g of groups) {
+        if (g.keys.some((k) => tv(next, k) !== "")) open.add(g.name);
       }
     }
     setOpenGroups(open);
-  }, [editing]);
+  }, [editing, EMPTY, groups, defaultOpenGroups]);
 
   const isEditing = !!editing;
 
@@ -108,9 +95,9 @@ export default function SpeciesForm({
       return next;
     });
 
-  const allOpen = openGroups.size === CATEGORY_GROUPS.length;
+  const allOpen = openGroups.size === groups.length;
   const toggleAll = () =>
-    setOpenGroups(allOpen ? new Set() : new Set(CATEGORY_GROUPS.map((g) => g.name)));
+    setOpenGroups(allOpen ? new Set() : new Set(groups.map((g) => g.name)));
 
   // Flag an already-logged isolate with the same name (excluding the one being
   // edited), to prevent accidental double entry.
@@ -175,7 +162,7 @@ export default function SpeciesForm({
             className="field__input"
             value={draft.genus}
             onChange={(e) => set("genus", e.target.value)}
-            placeholder="Staphylococcus"
+            placeholder={genusPlaceholder}
             autoComplete="off"
             spellCheck={false}
             required
@@ -187,7 +174,7 @@ export default function SpeciesForm({
             className="field__input"
             value={draft.species}
             onChange={(e) => set("species", e.target.value)}
-            placeholder="aureus"
+            placeholder={speciesPlaceholder}
             autoComplete="off"
             spellCheck={false}
             required
@@ -230,9 +217,9 @@ export default function SpeciesForm({
           </button>
         </div>
 
-        {CATEGORY_GROUPS.map((group) => {
+        {groups.map((group) => {
           const open = openGroups.has(group.name);
-          const filled = group.keys.filter((k) => hasValue(draft[k])).length;
+          const filled = group.keys.filter((k) => tv(draft, k) !== "").length;
           return (
             <section key={group.name} className={`fgroup${open ? " is-open" : ""}`}>
               <button
@@ -250,12 +237,12 @@ export default function SpeciesForm({
               {open && (
                 <div className="form__grid">
                   {group.keys.map((k) => {
-                    const cat = CATEGORY_BY_KEY[k];
+                    const cat = catByKey[k];
                     return (
                       <Field
                         key={cat.key}
                         cat={cat}
-                        value={draft[cat.key]}
+                        value={tv(draft, cat.key) || null}
                         onSelect={(v) => toggle(cat.key, v)}
                         onText={(v) => set(cat.key, v === "" ? null : v)}
                       />

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import { fetchLineage } from "./lib/gbif";
+import { DomainProvider, BACTERIA } from "./domains";
 import type { Species, SpeciesDraft } from "./types";
 import Header from "./components/Header";
 import SetupBanner from "./components/SetupBanner";
@@ -12,6 +13,8 @@ import CustomView from "./components/CustomView";
 type View = "list" | "tree" | "custom";
 
 export default function App() {
+  // Fixed to bacteria for now; the domain toggle wires this to state next.
+  const config = BACTERIA;
   const [species, setSpecies] = useState<Species[]>([]);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -29,7 +32,7 @@ export default function App() {
     }
     setLoading(true);
     const { data, error } = await supabase
-      .from("species")
+      .from(config.table)
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
@@ -53,7 +56,7 @@ export default function App() {
     const lineage = await fetchLineage(s.genus, s.species, s.old_name);
     if (!lineage) return;
     const { data, error } = await supabase
-      .from("species")
+      .from(config.table)
       .update({ lineage })
       .eq("id", s.id)
       .select()
@@ -70,7 +73,7 @@ export default function App() {
 
       if (editingId) {
         const { data, error } = await supabase
-          .from("species")
+          .from(config.table)
           .update(draft)
           .eq("id", editingId)
           .select()
@@ -84,7 +87,7 @@ export default function App() {
         return;
       }
 
-      const { data, error } = await supabase.from("species").insert(draft).select().single();
+      const { data, error } = await supabase.from(config.table).insert(draft).select().single();
       if (error) throw new Error(error.message);
       const saved = data as Species;
       setSpecies((prev) => [saved, ...prev]);
@@ -124,7 +127,7 @@ export default function App() {
       if (editing?.id === id) closeForm();
       const prev = species;
       setSpecies((s) => s.filter((x) => x.id !== id)); // optimistic
-      const { error } = await supabase.from("species").delete().eq("id", id);
+      const { error } = await supabase.from(config.table).delete().eq("id", id);
       if (error) {
         setLoadError(error.message);
         setSpecies(prev); // roll back
@@ -134,6 +137,7 @@ export default function App() {
   );
 
   return (
+    <DomainProvider config={config}>
     <div className="shell">
       <Header count={species.length} />
 
@@ -239,5 +243,6 @@ export default function App() {
         <span>bench log</span>
       </footer>
     </div>
+    </DomainProvider>
   );
 }

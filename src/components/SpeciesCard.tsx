@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Species } from "../types";
+import { tv, type Species } from "../types";
 import { binomial } from "../lib/format";
 import Readout from "./Readout";
 
@@ -25,7 +25,7 @@ export default function SpeciesCard({
   const [open, setOpen] = useState(!collapsed);
   useEffect(() => setOpen(!collapsed), [collapsed]);
 
-  const notes = species.other_notes?.trim();
+  const notes = tv(species, "other_notes").trim();
   const logged = new Date(species.created_at).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",

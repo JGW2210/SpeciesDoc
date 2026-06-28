@@ -34,8 +34,9 @@ export interface DomainConfig {
   bands: Band[];
   bandOf: (s: Specimen) => string;
   bacterial: boolean; // taxonomy: apply bacterial corrections + Gram fallback
-  // Optional curated lineage (overrides GBIF) for genera the backbone misses —
-  // used by viruses, where GBIF coverage is poor. Returns null to fall back to GBIF.
+  // Optional curated lineage (overrides GBIF) for genera the backbone misses or
+  // misplaces — used by viruses (sparse coverage) and parasites (inconsistent
+  // protist taxonomy). Returns null to fall back to GBIF.
   lineageFor?: (genus: string, species: string) => Lineage | null;
 }
 

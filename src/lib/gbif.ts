@@ -50,7 +50,11 @@ export async function fetchLineage(
   species: string,
   oldName?: string | null,
 ): Promise<Lineage | null> {
-  const primary = `${genus} ${species}`.trim();
+  // A placeholder epithet ("sp."/"spp."/blank) isn't a real name — GBIF often
+  // returns NONE for "Genus spp.", so look the genus up on its own instead.
+  const sp = species.trim();
+  const genusOnly = sp === "" || /^spp?\.?$/i.test(sp);
+  const primary = genusOnly ? genus.trim() : `${genus} ${species}`.trim();
   const main = await matchName(primary);
   if (placed(main)) return main;
 

@@ -85,7 +85,9 @@ from there instead of importing the bacterial constants. Rows are the generic
   virus coverage is poor, so the virus config has **`lineageFor`** (→
   `src/lib/virusLineage.ts`, `VIRAL_LINEAGES`): a curated genus→ICTV-lineage map
   that **overrides GBIF** in `enrichOne` (applied on save and via "Fetch
-  lineage"; matchType `"CURATED"`). Extend the map as more virus genera are
+  lineage"; matchType `"CURATED"`) **and at display time** in `TreeView` (so
+  rows cached before the map — or via GBIF, which lacks realm — still render the
+  curated lineage without a re-fetch). Extend the map as more virus genera are
   logged. The Lineage type carries **`realm`** (viruses); the **detailed
   dendrogram** for non-bacterial domains folds in the full available ICTV chain
   (realm → kingdom → phylum → class → order → family → genus), skipping absent

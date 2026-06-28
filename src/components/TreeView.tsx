@@ -98,16 +98,33 @@ function collapse(node: TaxNode, phylum: string, overrides: Set<string>): TaxNod
 const hits = (s: Species, q: string) =>
   q !== "" && binomial(s.genus, s.species).toLowerCase().includes(q);
 
-// Find a (phylum/class) subtree by its collapse key, to re-root the layout when
-// the user focuses on a branch.
-function findByKey(node: TaxNode, phylum: string, target: string): TaxNode | null {
-  if (keyOf(node, phylum) === target) return node;
-  const nextPhylum = node.rank === "phylum" ? node.name : phylum;
-  for (const c of node.children ?? []) {
-    const found = findByKey(c, nextPhylum, target);
-    if (found) return found;
+// A focus target is the rank-path from the root down to the focused node (one
+// step per rank, skipping ranks the lineage lacks). This addresses any internal
+// node — realm, kingdom, phylum, class, order, family — not just phylum/class.
+type FocusStep = { rank: TaxNode["rank"]; name: string };
+type FocusPath = FocusStep[];
+
+// Re-root the layout: walk the tree following the rank-path, returning the
+// focused subtree (or null if it isn't present, e.g. after a data change).
+function findByPath(root: TaxNode, path: FocusPath): TaxNode | null {
+  let node: TaxNode | undefined = root;
+  for (const step of path) {
+    node = node.children?.find((c) => !c.isolate && c.rank === step.rank && c.name === step.name);
+    if (!node) return null;
   }
-  return null;
+  return node ?? null;
+}
+
+// Absolute rank-path of a laid-out node, given the focus the layout was built
+// from. `base` is the current focus (the path to the layout's root); the node's
+// own ancestors (minus that root) extend it.
+function pathOf(n: HierarchyNode<TaxNode>, base: FocusPath | null): FocusPath {
+  const rel = n
+    .ancestors()
+    .reverse()
+    .slice(1)
+    .map((a) => ({ rank: a.data.rank, name: a.data.name }));
+  return [...(base ?? []), ...rel];
 }
 
 function genusKeys(
@@ -132,28 +149,22 @@ function genusKeys(
   return { all, big };
 }
 
-function focusCrumb(focus: string | null, rootLabel: string): { label: string; key: string | null }[] {
-  const trail: { label: string; key: string | null }[] = [{ label: rootLabel, key: null }];
-  if (!focus) return trail;
-  if (focus.startsWith("p:")) {
-    trail.push({ label: focus.slice(2), key: focus });
-  } else if (focus.startsWith("c:")) {
-    const rest = focus.slice(2); // phylum/Class
-    const slash = rest.indexOf("/");
-    trail.push({ label: rest.slice(0, slash), key: `p:${rest.slice(0, slash)}` });
-    trail.push({ label: rest.slice(slash + 1), key: focus });
-  }
+// Breadcrumb from the root to the focused node; each step links to its own
+// prefix path (the root links to null = unfocused).
+function focusCrumb(focus: FocusPath | null, rootLabel: string): { label: string; path: FocusPath | null }[] {
+  const trail: { label: string; path: FocusPath | null }[] = [{ label: rootLabel, path: null }];
+  (focus ?? []).forEach((step, i) => trail.push({ label: step.name, path: (focus ?? []).slice(0, i + 1) }));
   return trail;
 }
 
-const phylumOf = (focus: string | null) =>
-  focus ? (focus.startsWith("p:") ? focus.slice(2) : focus.slice(2, focus.indexOf("/"))) : null;
+// The name to colour by when focused into a single branch (its deepest step).
+const focusName = (focus: FocusPath | null) => (focus && focus.length ? focus[focus.length - 1].name : null);
 
 // Shared interaction state for both SVG layouts: collapse overrides, focus
 // (re-root), and pan/zoom.
 function useTreeNav(species: Species[], bacterial: boolean, detailed: boolean) {
   const [overrides, setOverrides] = useState<Set<string>>(new Set());
-  const [focus, setFocus] = useState<string | null>(null);
+  const [focus, setFocus] = useState<FocusPath | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -240,7 +251,7 @@ function TreeControls({ nav }: { nav: TreeNav }) {
                 </span>
               )}
               {i < crumb.length - 1 ? (
-                <button type="button" className="tree__crumb-link" onClick={() => nav.setFocus(c.key)}>
+                <button type="button" className="tree__crumb-link" onClick={() => nav.setFocus(c.path)}>
                   {c.label}
                 </button>
               ) : (
@@ -431,12 +442,21 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
   const nav = useTreeNav(species, bacterial, false);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
-  const focusPhylum = phylumOf(focus);
+  const fName = focusName(focus);
 
-  const { leaves, links, hulls, handles, fit, fitSig } = useMemo(() => {
+  // The rank a hull encircles: phylum for bacteria; kingdom for viruses/parasites
+  // (falling back to realm for a branch with no kingdom layer, e.g. Deltavirus).
+  // Leaves and genera take their colour from this grouping ancestor.
+  const isGroupRank = (n: HierarchyNode<TaxNode>) => {
+    if (bacterial) return n.data.rank === "phylum";
+    if (n.data.rank === "kingdom") return true;
+    if (n.data.rank === "realm") return !(n.children ?? []).some((c) => c.data.rank === "kingdom");
+    return false;
+  };
+
+  const { leaves, links, hulls, ringLabels, handles, fit, fitSig } = useMemo(() => {
     const full = collapse(buildTaxonomy(species, { bacterial }), "", overrides);
-    const rootData = focus ? findByKey(full, "", focus) ?? full : full;
-    const focused = rootData !== full;
+    const rootData = focus ? findByPath(full, focus) ?? full : full;
     const root = cluster<TaxNode>()
       .size([2 * Math.PI, RADIUS])
       .separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1))(hierarchy(rootData));
@@ -448,9 +468,13 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
       .descendants()
       .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
 
-    // One hull per *expanded* phylum; none when focused into a single branch.
-    const phyla = focused ? [] : (root.children ?? []).filter((p) => !!p.children);
-    const hullShapes = phyla.map((p) => {
+    // One hull per *expanded* grouping node (kingdom / phylum) below the current
+    // root — so focusing a realm still hulls its kingdoms, while focusing into a
+    // group itself (now the root) drops the redundant whole-view hull.
+    const groups = root
+      .descendants()
+      .filter((n) => n.depth >= 1 && !!n.children && isGroupRank(n));
+    const hullShapes = groups.map((p) => {
       const pts = p.leaves().map(polar);
       pts.push(polar(p));
       const color = colorFor(p.data.name);
@@ -474,8 +498,20 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
         path = "";
         labelAt = [cx, cy < 0 ? cy - 14 : cy + 14];
       }
-      return { name: p.data.name, color, path, labelAt };
+      return { name: p.data.name, color, path, labelAt, focusPath: pathOf(p, focus) };
     });
+
+    // The other grouping ranks get a plain ring label at their node (realm above
+    // the hull, phylum below it); bacteria draw none here (phylum is the hull,
+    // class is the greek tag). Each re-roots the view on click.
+    const ringRanks: TaxNode["rank"][] = bacterial ? [] : ["realm", "phylum"];
+    const ringLabelShapes = root
+      .descendants()
+      .filter((n) => n.depth >= 1 && !!n.children && ringRanks.includes(n.data.rank) && !isGroupRank(n))
+      .map((n) => {
+        const [x, y] = polar(n);
+        return { name: n.data.name, x, y, color: colorFor(n.data.name), focusPath: pathOf(n, focus) };
+      });
 
     let fit: ZoomTransform | null = null;
     let fitSig = "";
@@ -502,7 +538,15 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
       }
     }
 
-    return { leaves: allLeaves, links: allLinks, hulls: hullShapes, handles: handleNodes, fit, fitSig };
+    return {
+      leaves: allLeaves,
+      links: allLinks,
+      hulls: hullShapes,
+      ringLabels: ringLabelShapes,
+      handles: handleNodes,
+      fit,
+      fitSig,
+    };
   }, [species, overrides, focus, q, bacterial]);
 
   useFit(nav, fit, fitSig, q);
@@ -532,12 +576,27 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
                   y={h.labelAt[1]}
                   fill={h.color}
                   textAnchor={h.labelAt[0] < 0 ? "end" : "start"}
-                  onClick={() => setFocus(`p:${h.name}`)}
+                  onClick={() => setFocus(h.focusPath)}
                 >
                   {h.name}
                   <title>Focus on {h.name}</title>
                 </text>
               </g>
+            ))}
+
+            {ringLabels.map((r) => (
+              <text
+                key={`ring-${r.name}`}
+                className="tree__ringlabel"
+                x={r.x}
+                y={r.y}
+                fill={r.color}
+                textAnchor="middle"
+                onClick={() => setFocus(r.focusPath)}
+              >
+                {r.name}
+                <title>Focus on {r.name}</title>
+              </text>
             ))}
 
             <g className="tree__links" fill="none">
@@ -560,7 +619,7 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
                     x={x}
                     y={y}
                     textAnchor="middle"
-                    onClick={() => setFocus(`c:${n.parent?.data.name ?? ""}/${n.data.name}`)}
+                    onClick={() => setFocus(pathOf(n, focus))}
                   >
                     {n.data.tag}
                     <title>Focus on {n.data.name}</title>
@@ -589,11 +648,11 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
               const angleDeg = (leaf.x * 180) / Math.PI - 90;
               const flip = leaf.x >= Math.PI;
               const d = leaf.data;
-              const phylum = leaf.ancestors().find((a) => a.data.rank === "phylum");
-              const color = phylum
-                ? colorFor(phylum.data.name)
-                : focusPhylum
-                  ? colorFor(focusPhylum)
+              const grp = leaf.ancestors().find(isGroupRank);
+              const color = grp
+                ? colorFor(grp.data.name)
+                : fName
+                  ? colorFor(fName)
                   : "#5b6573";
               const floatStyle = {
                 animationDelay: `${(i % 12) * -0.5}s`,
@@ -702,12 +761,12 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
   const nav = useTreeNav(species, bacterial, true);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
-  const focusPhylum = phylumOf(focus);
+  const fName = focusName(focus);
 
   const { leaves, links, internals, handles, vbW, vbH, fit, fitSig } = useMemo(() => {
     // The dendrogram uses the detailed topology: class + order for every isolate.
     const full = collapse(buildTaxonomy(species, { detailed: true, bacterial }), "", overrides);
-    const rootData = focus ? findByKey(full, "", focus) ?? full : full;
+    const rootData = focus ? findByPath(full, focus) ?? full : full;
 
     const hroot = hierarchy(rootData);
     const leafCount = hroot.leaves().length;
@@ -789,7 +848,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
   // works whether that's a phylum (bacteria) or a realm/kingdom (viruses).
   const groupColor = (n: HierarchyNode<TaxNode>) => {
     const top = n.ancestors().find((a) => a.depth === 1);
-    return top ? colorFor(top.data.name) : focusPhylum ? colorFor(focusPhylum) : "#5b6573";
+    return top ? colorFor(top.data.name) : fName ? colorFor(fName) : "#5b6573";
   };
 
   return (
@@ -822,14 +881,13 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
             // Top ranks (realm/kingdom/phylum) are coloured by their own name.
             const isTop = d.rank === "realm" || d.rank === "kingdom" || isPhylum;
             const color = isTop ? colorFor(d.name) : groupColor(n);
-            // phylum/class focus (re-root), genus collapses, the rest are display-only.
-            const onClickNode = isPhylum
-              ? () => setFocus(`p:${d.name}`)
-              : isClass
-                ? () => setFocus(`c:${n.parent?.data.name ?? ""}/${d.name}`)
-                : isGenus
-                  ? () => toggle(d.key!)
-                  : undefined;
+            // Every rank above genus re-roots (focus) on click; genus collapses.
+            const isRank = ["realm", "kingdom", "phylum", "class", "order", "family"].includes(d.rank);
+            const onClickNode = isGenus
+              ? () => toggle(d.key!)
+              : isRank
+                ? () => setFocus(pathOf(n, focus))
+                : undefined;
             return (
               <g
                 key={`${d.rank}-${dx(n)}-${dy(n)}`}

@@ -189,6 +189,10 @@ export interface TaxonomyOptions {
 // lineage can be indexed by rank without a cast.
 type NbRank = "realm" | "kingdom" | "phylum" | "class" | "order" | "family";
 const NB_RANKS: NbRank[] = ["realm", "kingdom", "phylum", "class", "order", "family"];
+// The lean (radial / outline) non-bacterial topology stops at phylum so the
+// radial stays readable while still separating by realm + kingdom; the detailed
+// dendrogram walks the full NB_RANKS chain.
+const NB_RADIAL_RANKS: NbRank[] = ["realm", "kingdom", "phylum"];
 
 // A lineage's value at a rank, treating GBIF's placeholder kingdom "Viruses" as
 // absent. GBIF tops every virus at kingdom "Viruses" (not a real ICTV rank),
@@ -229,9 +233,10 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
   const { detailed = false, bacterial = true } = opts;
   const root: TaxNode = { name: bacterial ? "Bacteria" : "Root", rank: "root", children: [] };
 
-  // Only the non-bacterial detailed (dendrogram) topology walks the deep chain
-  // where partial GBIF lineages cause forking; build the ancestry map for it.
-  const anc = !bacterial && detailed ? ancestryMap(species) : null;
+  // Non-bacterial topologies back-fill missing ranks from a shared ancestry map
+  // so partial GBIF lineages don't fork (see ancestryMap); both the lean radial
+  // and the detailed dendrogram use it.
+  const anc = !bacterial ? ancestryMap(species) : null;
 
   const child = (parent: TaxNode, name: string, rank: TaxNode["rank"], tag?: string): TaxNode => {
     parent.children = parent.children ?? [];
@@ -259,13 +264,13 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
         } else if (cls && GREEK[cls]) {
           node = child(node, cls, "class", GREEK[cls]);
         }
-      } else if (detailed) {
-        // Non-bacterial detailed (dendrogram): the full available ICTV chain,
-        // including realm + family, skipping any rank the lineage doesn't have.
-        // Back-fill ranks this row is missing from the shared ancestry map so a
-        // partial GBIF lineage lands under the same ancestors as a complete one
-        // (no duplicate forked subtree). Filling from the deepest present rank
-        // first picks up the longest known chain.
+      } else {
+        // Non-bacterial: walk the ICTV chain — the full realm→…→family for the
+        // detailed dendrogram, or realm→kingdom→phylum for the lean radial /
+        // outline. Back-fill ranks this row is missing from the shared ancestry
+        // map so a partial GBIF lineage lands under the same ancestors as a
+        // complete one (no duplicate forked subtree); filling from the deepest
+        // present rank first picks up the longest known chain.
         const chain: Partial<Record<NbRank, string>> = {};
         for (const r of NB_RANKS) {
           const v = linRank(lin, r);
@@ -279,10 +284,14 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
             if (rec) for (const hr of NB_RANKS) if (rec[hr] && !chain[hr]) chain[hr] = rec[hr];
           }
         }
-        for (const rank of NB_RANKS) if (chain[rank]) node = child(node, chain[rank] as string, rank);
-      } else {
-        // Non-bacterial lean (radial/outline): single top node + genus.
-        node = child(node, lin.phylum || lin.kingdom || lin.realm || "Unplaced", "phylum");
+        const ranks = detailed ? NB_RANKS : NB_RADIAL_RANKS;
+        let placed = false;
+        for (const rank of ranks)
+          if (chain[rank]) {
+            node = child(node, chain[rank] as string, rank);
+            placed = true;
+          }
+        if (!placed) node = child(node, "Unplaced", "phylum");
       }
       // Use the entered (current) genus so the tree shows modern names, even when
       // GBIF placed the isolate via an old synonym.

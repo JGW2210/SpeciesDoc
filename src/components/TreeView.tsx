@@ -282,9 +282,24 @@ interface TreeViewProps {
 }
 
 export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
+  const { lineageFor } = useDomain();
   const [mode, setMode] = useState<Layout>("dendro");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Species | null>(null);
+
+  // Apply the domain's curated lineage override (e.g. viruses) at display time,
+  // so the tree is correct even for rows whose cached lineage predates the map
+  // or came from GBIF (which lacks realm). Mirrors the bacterial corrections.
+  const items = useMemo(
+    () =>
+      lineageFor
+        ? species.map((s) => {
+            const o = lineageFor(s.genus, s.species);
+            return o ? { ...s, lineage: o } : s;
+          })
+        : species,
+    [species, lineageFor],
+  );
 
   if (species.length === 0) {
     return (
@@ -295,10 +310,10 @@ export default function TreeView({ species, enriching, onRefreshLineage, onEdit 
     );
   }
 
-  const missing = species.filter((s) => !s.lineage || s.lineage.matchType === "NONE").length;
-  const unplaced = species.filter((s) => s.lineage && s.lineage.matchType === "NONE");
+  const missing = items.filter((s) => !s.lineage || s.lineage.matchType === "NONE").length;
+  const unplaced = items.filter((s) => s.lineage && s.lineage.matchType === "NONE");
   const viewProps = {
-    species,
+    species: items,
     query,
     selectedId: selected?.id ?? null,
     onSelect: setSelected,

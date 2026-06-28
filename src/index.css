@@ -1594,16 +1594,23 @@ textarea {
 .dendlabel:hover .dendlabel__text {
   text-decoration: underline;
 }
+.dendlabel__text--realm,
 .dendlabel__text--phylum {
   font-family: var(--font-display);
   font-size: 14.5px;
   font-weight: 700;
 }
+.dendlabel__text--kingdom {
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 650;
+}
 .dendlabel__text--class {
   font-weight: 650;
   fill: var(--ink);
 }
-.dendlabel__text--order {
+.dendlabel__text--order,
+.dendlabel__text--family {
   font-size: 10px;
   font-weight: 500;
   fill: var(--muted);

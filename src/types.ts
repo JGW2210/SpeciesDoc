@@ -1,5 +1,6 @@
 // Taxonomic lineage fetched from the GBIF backbone, cached on the row.
 export interface Lineage {
+  realm?: string | null; // virus top rank (ICTV); GBIF doesn't return it
   kingdom?: string | null;
   phylum?: string | null;
   class?: string | null;

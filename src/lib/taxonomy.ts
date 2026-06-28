@@ -254,16 +254,16 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
 
     if (lin && lin.matchType !== "NONE" && (lin.realm || lin.phylum || lin.class || lin.genus)) {
       if (bacterial) {
+        // Full chain below the Bacteria kingdom (the tree root): phylum → class →
+        // order → family → genus, for both the dendrogram and the radial/outline
+        // (the radial keeps phylum as its top level and surfaces class/order/
+        // family as ring labels). Curated corrections still apply.
         node = child(node, resolvePhylum(s.genus, lin.phylum), "phylum");
         const cls = resolveClass(s.genus, lin.class);
-        if (detailed) {
-          // Show class for every phylum, plus the order, for finer grouping.
-          if (cls) node = child(node, cls, "class", GREEK[cls]);
-          const ord = modernOrder(lin.order);
-          if (ord) node = child(node, ord, "order");
-        } else if (cls && GREEK[cls]) {
-          node = child(node, cls, "class", GREEK[cls]);
-        }
+        if (cls) node = child(node, cls, "class", GREEK[cls]);
+        const ord = modernOrder(lin.order);
+        if (ord) node = child(node, ord, "order");
+        if (lin.family) node = child(node, lin.family, "family");
       } else {
         // Non-bacterial: walk the ICTV chain — the full realm→…→family for the
         // detailed dendrogram, or realm→kingdom→phylum for the lean radial /

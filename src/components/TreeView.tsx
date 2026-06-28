@@ -493,14 +493,23 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
       return { name: p.data.name, color, path, labelAt, focusPath: pathOf(p, focus) };
     });
 
-    // The ranks below the hull get a plain ring label at their node (kingdom then
-    // phylum, for viruses); bacteria draw none here (phylum is the hull, class is
-    // the greek tag). depth >= 2 keeps the depth-1 hull rank off this list. Each
-    // re-roots the view on click.
-    const ringRanks: TaxNode["rank"][] = bacterial ? [] : ["kingdom", "phylum"];
+    // The ranks below the hull get a plain ring label at their node: kingdom then
+    // phylum for viruses; class, order, family for bacteria (whose hull is the
+    // phylum). depth >= 2 keeps the depth-1 hull rank off this list. Each re-roots
+    // the view on click.
+    const ringRanks: TaxNode["rank"][] = bacterial
+      ? ["class", "order", "family"]
+      : ["kingdom", "phylum"];
     const ringLabelShapes = root
       .descendants()
-      .filter((n) => n.depth >= 2 && !!n.children && ringRanks.includes(n.data.rank))
+      .filter(
+        (n) =>
+          n.depth >= 2 &&
+          !!n.children &&
+          ringRanks.includes(n.data.rank) &&
+          // Proteobacteria classes already render as a greek tag — don't double up.
+          !(bacterial && n.data.rank === "class" && !!n.data.tag),
+      )
       .map((n) => {
         const [x, y] = polar(n);
         return { name: n.data.name, x, y, color: colorFor(n.data.name), focusPath: pathOf(n, focus) };

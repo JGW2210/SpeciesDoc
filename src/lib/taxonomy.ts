@@ -4,7 +4,7 @@ import { gramGroupOf, binomial } from "./format";
 // A node in the taxonomic tree handed to d3.hierarchy.
 export interface TaxNode {
   name: string; // display name
-  rank: "root" | "phylum" | "class" | "order" | "genus" | "isolate";
+  rank: "root" | "realm" | "kingdom" | "phylum" | "class" | "order" | "family" | "genus" | "isolate";
   tag?: string; // optional short marker (e.g. greek letter for Proteobacteria)
   isolate?: Species; // present on individual leaves
   isolates?: Species[]; // all isolates under a genus (used for collapsing)
@@ -202,19 +202,33 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
     const lin = s.lineage;
     let node = root;
 
-    if (lin && lin.matchType !== "NONE" && (lin.phylum || lin.class || lin.genus)) {
-      const phylum = bacterial
-        ? resolvePhylum(s.genus, lin.phylum)
-        : lin.phylum || lin.kingdom || "Unplaced";
-      node = child(node, phylum, "phylum");
-      const cls = bacterial ? resolveClass(s.genus, lin.class) : (lin.class ?? null);
-      if (detailed) {
-        // Show class for every phylum, plus the order, for finer grouping.
-        if (cls) node = child(node, cls, "class", bacterial ? GREEK[cls] : undefined);
-        const ord = bacterial ? modernOrder(lin.order) : (lin.order ?? null);
-        if (ord) node = child(node, ord, "order");
-      } else if (bacterial && cls && GREEK[cls]) {
-        node = child(node, cls, "class", GREEK[cls]);
+    if (lin && lin.matchType !== "NONE" && (lin.realm || lin.phylum || lin.class || lin.genus)) {
+      if (bacterial) {
+        node = child(node, resolvePhylum(s.genus, lin.phylum), "phylum");
+        const cls = resolveClass(s.genus, lin.class);
+        if (detailed) {
+          // Show class for every phylum, plus the order, for finer grouping.
+          if (cls) node = child(node, cls, "class", GREEK[cls]);
+          const ord = modernOrder(lin.order);
+          if (ord) node = child(node, ord, "order");
+        } else if (cls && GREEK[cls]) {
+          node = child(node, cls, "class", GREEK[cls]);
+        }
+      } else if (detailed) {
+        // Non-bacterial detailed (dendrogram): the full available ICTV chain,
+        // including realm + family, skipping any rank the lineage doesn't have.
+        const chain: [string | null | undefined, TaxNode["rank"]][] = [
+          [lin.realm, "realm"],
+          [lin.kingdom, "kingdom"],
+          [lin.phylum, "phylum"],
+          [lin.class, "class"],
+          [lin.order, "order"],
+          [lin.family, "family"],
+        ];
+        for (const [name, rank] of chain) if (name) node = child(node, name, rank);
+      } else {
+        // Non-bacterial lean (radial/outline): single top node + genus.
+        node = child(node, lin.phylum || lin.kingdom || lin.realm || "Unplaced", "phylum");
       }
       // Use the entered (current) genus so the tree shows modern names, even when
       // GBIF placed the isolate via an old synonym.

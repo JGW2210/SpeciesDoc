@@ -5,31 +5,36 @@ import type { Lineage } from "../types";
 // (down to family) keyed by lowercase genus; the entered genus/species fill the
 // rest. Extend as more virus genera are logged. `kingdom` holds the ICTV kingdom
 // (the realm is noted in comments). Lineages follow the ICTV 2023/24 release.
+// Intermediate ranks are optional: some taxa (e.g. Deltavirus) are classified
+// only at realm + family, with no kingdom/phylum/class/order.
 interface ViralRanks {
-  kingdom: string;
-  phylum: string;
-  class: string;
-  order: string;
+  realm: string;
+  kingdom?: string;
+  phylum?: string;
+  class?: string;
+  order?: string;
   family: string;
 }
 
 const VIRAL_LINEAGES: Record<string, ViralRanks> = {
   // — Riboviria / Orthornavirae (RNA) —
-  hepatovirus: { kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Picornavirales", family: "Picornaviridae" },
-  enterovirus: { kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Picornavirales", family: "Picornaviridae" },
-  betacoronavirus: { kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Nidovirales", family: "Coronaviridae" },
-  orthohepacivirus: { kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
-  hepacivirus: { kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
-  orthoflavivirus: { kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
-  rotavirus: { kingdom: "Orthornavirae", phylum: "Duplornaviricota", class: "Resentoviricetes", order: "Reovirales", family: "Sedoreoviridae" },
-  alphainfluenzavirus: { kingdom: "Orthornavirae", phylum: "Negarnaviricota", class: "Insthoviricetes", order: "Articulavirales", family: "Orthomyxoviridae" },
+  hepatovirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Picornavirales", family: "Picornaviridae" },
+  enterovirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Picornavirales", family: "Picornaviridae" },
+  betacoronavirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Pisuviricota", class: "Pisoniviricetes", order: "Nidovirales", family: "Coronaviridae" },
+  orthohepacivirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
+  hepacivirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
+  orthoflavivirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Kitrinoviricota", class: "Flasuviricetes", order: "Amarillovirales", family: "Flaviviridae" },
+  rotavirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Duplornaviricota", class: "Resentoviricetes", order: "Reovirales", family: "Sedoreoviridae" },
+  alphainfluenzavirus: { realm: "Riboviria", kingdom: "Orthornavirae", phylum: "Negarnaviricota", class: "Insthoviricetes", order: "Articulavirales", family: "Orthomyxoviridae" },
   // — Riboviria / Pararnavirae (reverse-transcribing) —
-  lentivirus: { kingdom: "Pararnavirae", phylum: "Artverviricota", class: "Revtraviricetes", order: "Ortervirales", family: "Retroviridae" },
+  lentivirus: { realm: "Riboviria", kingdom: "Pararnavirae", phylum: "Artverviricota", class: "Revtraviricetes", order: "Ortervirales", family: "Retroviridae" },
+  // — Ribozyviria (HDV; classified only at realm + family) —
+  deltavirus: { realm: "Ribozyviria", family: "Kolmioviridae" },
   // — Duplodnaviria / Heunggongvirae (dsDNA, herpes) —
-  simplexvirus: { kingdom: "Heunggongvirae", phylum: "Peploviricota", class: "Herviviricetes", order: "Herpesvirales", family: "Orthoherpesviridae" },
+  simplexvirus: { realm: "Duplodnaviria", kingdom: "Heunggongvirae", phylum: "Peploviricota", class: "Herviviricetes", order: "Herpesvirales", family: "Orthoherpesviridae" },
   // — Varidnaviria / Bamfordvirae (dsDNA, adeno/pox) —
-  mastadenovirus: { kingdom: "Bamfordvirae", phylum: "Preplasmiviricota", class: "Tectiliviricetes", order: "Rowavirales", family: "Adenoviridae" },
-  orthopoxvirus: { kingdom: "Bamfordvirae", phylum: "Nucleocytoviricota", class: "Pokkesviricetes", order: "Chitovirales", family: "Poxviridae" },
+  mastadenovirus: { realm: "Varidnaviria", kingdom: "Bamfordvirae", phylum: "Preplasmiviricota", class: "Tectiliviricetes", order: "Rowavirales", family: "Adenoviridae" },
+  orthopoxvirus: { realm: "Varidnaviria", kingdom: "Bamfordvirae", phylum: "Nucleocytoviricota", class: "Pokkesviricetes", order: "Chitovirales", family: "Poxviridae" },
 };
 
 // Curated lineage for a virus genus, or null when we don't have one (then GBIF is
@@ -38,7 +43,12 @@ export function viralLineage(genus: string, species: string): Lineage | null {
   const ranks = VIRAL_LINEAGES[genus.trim().toLowerCase()];
   if (!ranks) return null;
   return {
-    ...ranks,
+    realm: ranks.realm,
+    kingdom: ranks.kingdom ?? null,
+    phylum: ranks.phylum ?? null,
+    class: ranks.class ?? null,
+    order: ranks.order ?? null,
+    family: ranks.family,
     genus: genus.trim(),
     species: `${genus.trim()} ${species.trim()}`.trim(),
     matchType: "CURATED",

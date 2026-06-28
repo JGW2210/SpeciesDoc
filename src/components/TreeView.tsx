@@ -110,7 +110,11 @@ function findByKey(node: TaxNode, phylum: string, target: string): TaxNode | nul
   return null;
 }
 
-function genusKeys(species: Species[], bacterial: boolean): { all: string[]; big: Set<string> } {
+function genusKeys(
+  species: Species[],
+  bacterial: boolean,
+  detailed: boolean,
+): { all: string[]; big: Set<string> } {
   const all: string[] = [];
   const big = new Set<string>();
   const walk = (n: TaxNode, phylum: string) => {
@@ -122,7 +126,9 @@ function genusKeys(species: Species[], bacterial: boolean): { all: string[]; big
     const nextPhylum = n.rank === "phylum" ? n.name : phylum;
     n.children?.forEach((c) => walk(c, nextPhylum));
   };
-  walk(buildTaxonomy(species, { bacterial }), "");
+  // Build with the same topology the consuming view uses, so genus collapse keys
+  // match (the detailed tree can place a genus without a phylum, e.g. Deltavirus).
+  walk(buildTaxonomy(species, { bacterial, detailed }), "");
   return { all, big };
 }
 
@@ -145,7 +151,7 @@ const phylumOf = (focus: string | null) =>
 
 // Shared interaction state for both SVG layouts: collapse overrides, focus
 // (re-root), and pan/zoom.
-function useTreeNav(species: Species[], bacterial: boolean) {
+function useTreeNav(species: Species[], bacterial: boolean, detailed: boolean) {
   const [overrides, setOverrides] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<string | null>(null);
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity);
@@ -160,7 +166,10 @@ function useTreeNav(species: Species[], bacterial: boolean) {
       return next;
     });
 
-  const gk = useMemo(() => genusKeys(species, bacterial), [species, bacterial]);
+  const gk = useMemo(
+    () => genusKeys(species, bacterial, detailed),
+    [species, bacterial, detailed],
+  );
   const expandAll = () => setOverrides(new Set(gk.big));
   const collapseAll = () => setOverrides(new Set(gk.all.filter((k) => !gk.big.has(k))));
   const resetLayout = () => {
@@ -404,7 +413,7 @@ interface ViewProps {
 
 function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
   const { bacterial } = useDomain();
-  const nav = useTreeNav(species, bacterial);
+  const nav = useTreeNav(species, bacterial, false);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
   const focusPhylum = phylumOf(focus);
@@ -675,7 +684,7 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
 
 function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
   const { bacterial } = useDomain();
-  const nav = useTreeNav(species, bacterial);
+  const nav = useTreeNav(species, bacterial, true);
   const { overrides, focus, setFocus, transform, svgRef, toggle } = nav;
   const q = query.trim().toLowerCase();
   const focusPhylum = phylumOf(focus);
@@ -702,7 +711,9 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
       .descendants()
       .filter(
         (n) =>
-          !!n.children && n.depth >= 1 && ["phylum", "class", "order", "genus"].includes(n.data.rank),
+          !!n.children &&
+          n.depth >= 1 &&
+          ["realm", "kingdom", "phylum", "class", "order", "family", "genus"].includes(n.data.rank),
       );
 
     const handleNodes = root
@@ -750,9 +761,11 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
 
   useFit(nav, fit, fitSig, q);
 
-  const phylumColor = (n: HierarchyNode<TaxNode>) => {
-    const p = n.ancestors().find((a) => a.data.rank === "phylum");
-    return p ? colorFor(p.data.name) : focusPhylum ? colorFor(focusPhylum) : "#5b6573";
+  // Colour by the top-level grouping node (depth 1 under the current root) so it
+  // works whether that's a phylum (bacteria) or a realm/kingdom (viruses).
+  const groupColor = (n: HierarchyNode<TaxNode>) => {
+    const top = n.ancestors().find((a) => a.depth === 1);
+    return top ? colorFor(top.data.name) : focusPhylum ? colorFor(focusPhylum) : "#5b6573";
   };
 
   return (
@@ -782,8 +795,10 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
             const isPhylum = d.rank === "phylum";
             const isClass = d.rank === "class";
             const isGenus = d.rank === "genus";
-            const color = isPhylum ? colorFor(d.name) : phylumColor(n);
-            // phylum/class focus (re-root), genus collapses, order is display-only.
+            // Top ranks (realm/kingdom/phylum) are coloured by their own name.
+            const isTop = d.rank === "realm" || d.rank === "kingdom" || isPhylum;
+            const color = isTop ? colorFor(d.name) : groupColor(n);
+            // phylum/class focus (re-root), genus collapses, the rest are display-only.
             const onClickNode = isPhylum
               ? () => setFocus(`p:${d.name}`)
               : isClass
@@ -802,7 +817,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
                   className={`dendlabel__text dendlabel__text--${d.rank}`}
                   x={dx(n) + 6}
                   y={dy(n) - 5}
-                  fill={isPhylum ? color : undefined}
+                  fill={isTop ? color : undefined}
                 >
                   {isClass && d.tag ? `${d.tag} ${d.name}` : d.name}
                   {onClickNode && (
@@ -832,7 +847,7 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
 
           {leaves.map((leaf) => {
             const d = leaf.data;
-            const color = phylumColor(leaf);
+            const color = groupColor(leaf);
             const x = dx(leaf);
             const y = dy(leaf);
 
@@ -920,7 +935,7 @@ function Lineagecrumb({ species }: { species: Species }) {
   const parts = (
     bacterial
       ? [resolvePhylum(species.genus, lin.phylum), resolveClass(species.genus, lin.class), lin.order, lin.family, lin.genus]
-      : [lin.kingdom, lin.phylum, lin.class, lin.order, lin.family, lin.genus]
+      : [lin.realm, lin.kingdom, lin.phylum, lin.class, lin.order, lin.family, lin.genus]
   ).filter(Boolean);
   return (
     <p className="treedetail__crumb">

@@ -86,7 +86,13 @@ from there instead of importing the bacterial constants. Rows are the generic
   `src/lib/virusLineage.ts`, `VIRAL_LINEAGES`): a curated genus→ICTV-lineage map
   that **overrides GBIF** in `enrichOne` (applied on save and via "Fetch
   lineage"; matchType `"CURATED"`). Extend the map as more virus genera are
-  logged.
+  logged. The Lineage type carries **`realm`** (viruses); the **detailed
+  dendrogram** for non-bacterial domains folds in the full available ICTV chain
+  (realm → kingdom → phylum → class → order → family → genus), skipping absent
+  ranks — so taxa classified only at realm + family (e.g. Deltavirus →
+  Ribozyviria → Kolmioviridae) still place. Lean radial/outline use the best
+  available top rank (phylum → kingdom → realm). `genusKeys` is built with the
+  same `detailed` flag as its view so collapse keys line up.
 - Switching domains remounts the main content (`<main key={domainId}>`) so each
   section's form/board/tree state is fresh; the active table is reloaded.
 

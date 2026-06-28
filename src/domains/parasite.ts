@@ -1,5 +1,6 @@
 import type { Category, CategoryGroup } from "../data/categories";
 import { tv, type Specimen } from "../types";
+import { parasiteLineage } from "../lib/parasiteLineage";
 import type { Band, DomainConfig } from "./index";
 
 // Identification panel for parasites (protozoa, helminths, ectoparasites).
@@ -107,4 +108,5 @@ export const PARASITE: DomainConfig = {
   bands: BANDS,
   bandOf,
   bacterial: false,
+  lineageFor: parasiteLineage,
 };

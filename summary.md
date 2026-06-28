@@ -81,7 +81,12 @@ from there instead of importing the bacterial constants. Rows are the generic
   / `parasite`). Migration: `2026-06-27_add_virus_parasite.sql`.
 - **Taxonomy**: GBIF for all three. `buildTaxonomy(species, { detailed,
   bacterial })` — `bacterial: false` (virus/parasite) skips the bacterial name
-  corrections + Gram unplaced fallback and uses the raw GBIF lineage.
+  corrections + Gram unplaced fallback and uses the raw GBIF lineage. GBIF's
+  virus coverage is poor, so the virus config has **`lineageFor`** (→
+  `src/lib/virusLineage.ts`, `VIRAL_LINEAGES`): a curated genus→ICTV-lineage map
+  that **overrides GBIF** in `enrichOne` (applied on save and via "Fetch
+  lineage"; matchType `"CURATED"`). Extend the map as more virus genera are
+  logged.
 - Switching domains remounts the main content (`<main key={domainId}>`) so each
   section's form/board/tree state is fresh; the active table is reloaded.
 

@@ -1,5 +1,6 @@
 import type { Category, CategoryGroup } from "../data/categories";
 import { tv, type Specimen } from "../types";
+import { viralLineage } from "../lib/virusLineage";
 import type { Band, DomainConfig } from "./index";
 
 // Identification panel for viruses. Same field mechanics as the bacterial panel,
@@ -114,4 +115,5 @@ export const VIRUS: DomainConfig = {
   bands: BANDS,
   bandOf,
   bacterial: false,
+  lineageFor: viralLineage,
 };

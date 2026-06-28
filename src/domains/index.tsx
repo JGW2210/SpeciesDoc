@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Category, CategoryGroup } from "../data/categories";
 import { CATEGORIES, CATEGORY_GROUPS, DEFAULT_OPEN_GROUPS } from "../data/categories";
 import { GRAM_GROUPS, gramGroupOf } from "../lib/format";
-import type { Specimen } from "../types";
+import type { Lineage, Specimen } from "../types";
 import { VIRUS } from "./virus";
 import { PARASITE } from "./parasite";
 
@@ -34,6 +34,9 @@ export interface DomainConfig {
   bands: Band[];
   bandOf: (s: Specimen) => string;
   bacterial: boolean; // taxonomy: apply bacterial corrections + Gram fallback
+  // Optional curated lineage (overrides GBIF) for genera the backbone misses —
+  // used by viruses, where GBIF coverage is poor. Returns null to fall back to GBIF.
+  lineageFor?: (genus: string, species: string) => Lineage | null;
 }
 
 export const BACTERIA: DomainConfig = {

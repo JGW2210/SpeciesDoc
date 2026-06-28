@@ -53,7 +53,10 @@ export default function App() {
   // never blocks the core save.
   const enrichOne = useCallback(async (s: Species) => {
     if (!supabase) return;
-    const lineage = await fetchLineage(s.genus, s.species, s.old_name);
+    // A curated lineage (e.g. for viruses GBIF can't place) takes priority and
+    // skips the network lookup; otherwise fall back to GBIF.
+    const override = config.lineageFor?.(s.genus, s.species) ?? null;
+    const lineage = override ?? (await fetchLineage(s.genus, s.species, s.old_name));
     if (!lineage) return;
     const { data, error } = await supabase
       .from(config.table)

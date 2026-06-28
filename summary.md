@@ -151,7 +151,10 @@ full-width.
     **detailed topology** — `buildTaxonomy(species, true)` inserts a class (every
     phylum) + order layer (phylum → class → order → genus → isolate); the radial
     and outline keep the lean default. Order labels are display-only. d3 `cluster`
-    projected to cartesian. **Pan + wheel/pinch zoom** (d3-zoom); **click a
+    projected to cartesian, then each node's horizontal is re-set by **taxonomic
+    rank** (shared columns for realm/kingdom/phylum/… ) rather than tree depth, so
+    rank-skipping lineages (e.g. Deltavirus realm→family) still align — the elbow
+    link spans the gap. **Pan + wheel/pinch zoom** (d3-zoom); **click a
     phylum/class label to focus** (re-root) with a breadcrumb to step back;
     **Expand all / Collapse all / Reset view / Reset layout**; genera
     auto-collapse at ≥3 isolates ("Genus spp.") with a "−" handle; search

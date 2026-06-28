@@ -711,13 +711,22 @@ function Dendrogram({ species, query, selectedId, onSelect }: ViewProps) {
 
     const hroot = hierarchy(rootData);
     const leafCount = hroot.leaves().length;
-    let maxDepth = 1;
-    hroot.each((n) => {
-      if (n.depth > maxDepth) maxDepth = n.depth;
-    });
     const H = Math.max((leafCount - 1) * ROW_H, 80);
-    const W = maxDepth * COL_W;
-    const root = cluster<TaxNode>().size([H, W]).separation(() => 1)(hroot);
+    const root = cluster<TaxNode>().size([H, 1]).separation(() => 1)(hroot);
+
+    // Position each node horizontally by its taxonomic RANK rather than tree
+    // depth, so every realm/kingdom/phylum/… shares a column even when a lineage
+    // skips ranks (the elbow link just spans the gap).
+    const RANK_ORDER: TaxNode["rank"][] = [
+      "root", "realm", "kingdom", "phylum", "class", "order", "family", "genus", "isolate",
+    ];
+    const desc = root.descendants();
+    const present = RANK_ORDER.filter((r) => desc.some((n) => n.data.rank === r));
+    const col = new Map(present.map((r, i) => [r, i]));
+    desc.forEach((n) => {
+      n.y = (col.get(n.data.rank) ?? 0) * COL_W;
+    });
+    const W = Math.max(present.length - 1, 1) * COL_W;
 
     const allLeaves = root.leaves();
     const allLinks = root.links();

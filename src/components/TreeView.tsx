@@ -444,15 +444,11 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
   const q = query.trim().toLowerCase();
   const fName = focusName(focus);
 
-  // The rank a hull encircles: phylum for bacteria; kingdom for viruses/parasites
-  // (falling back to realm for a branch with no kingdom layer, e.g. Deltavirus).
-  // Leaves and genera take their colour from this grouping ancestor.
-  const isGroupRank = (n: HierarchyNode<TaxNode>) => {
-    if (bacterial) return n.data.rank === "phylum";
-    if (n.data.rank === "kingdom") return true;
-    if (n.data.rank === "realm") return !(n.children ?? []).some((c) => c.data.rank === "kingdom");
-    return false;
-  };
+  // A hull encircles each top-level branch under the current root — the broadest
+  // rank in view: realm for viruses, kingdom for parasites, phylum for bacteria.
+  // Leaves and genera take their colour from that depth-1 ancestor. Because it is
+  // depth-based it self-adapts when focused (focus a realm → hulls per kingdom).
+  const topOf = (n: HierarchyNode<TaxNode>) => n.ancestors().find((a) => a.depth === 1);
 
   const { leaves, links, hulls, ringLabels, handles, fit, fitSig } = useMemo(() => {
     const full = collapse(buildTaxonomy(species, { bacterial }), "", overrides);
@@ -468,12 +464,8 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
       .descendants()
       .filter((n) => !!n.children && n.data.rank === "genus" && (n.data.isolates?.length ?? 0) >= COLLAPSE_MIN);
 
-    // One hull per *expanded* grouping node (kingdom / phylum) below the current
-    // root — so focusing a realm still hulls its kingdoms, while focusing into a
-    // group itself (now the root) drops the redundant whole-view hull.
-    const groups = root
-      .descendants()
-      .filter((n) => n.depth >= 1 && !!n.children && isGroupRank(n));
+    // One hull per top-level (depth-1) branch under the current root.
+    const groups = root.descendants().filter((n) => n.depth === 1 && !!n.children);
     const hullShapes = groups.map((p) => {
       const pts = p.leaves().map(polar);
       pts.push(polar(p));
@@ -501,13 +493,14 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
       return { name: p.data.name, color, path, labelAt, focusPath: pathOf(p, focus) };
     });
 
-    // The other grouping ranks get a plain ring label at their node (realm above
-    // the hull, phylum below it); bacteria draw none here (phylum is the hull,
-    // class is the greek tag). Each re-roots the view on click.
-    const ringRanks: TaxNode["rank"][] = bacterial ? [] : ["realm", "phylum"];
+    // The ranks below the hull get a plain ring label at their node (kingdom then
+    // phylum, for viruses); bacteria draw none here (phylum is the hull, class is
+    // the greek tag). depth >= 2 keeps the depth-1 hull rank off this list. Each
+    // re-roots the view on click.
+    const ringRanks: TaxNode["rank"][] = bacterial ? [] : ["kingdom", "phylum"];
     const ringLabelShapes = root
       .descendants()
-      .filter((n) => n.depth >= 1 && !!n.children && ringRanks.includes(n.data.rank) && !isGroupRank(n))
+      .filter((n) => n.depth >= 2 && !!n.children && ringRanks.includes(n.data.rank))
       .map((n) => {
         const [x, y] = polar(n);
         return { name: n.data.name, x, y, color: colorFor(n.data.name), focusPath: pathOf(n, focus) };
@@ -648,7 +641,7 @@ function RadialTree({ species, query, selectedId, onSelect }: ViewProps) {
               const angleDeg = (leaf.x * 180) / Math.PI - 90;
               const flip = leaf.x >= Math.PI;
               const d = leaf.data;
-              const grp = leaf.ancestors().find(isGroupRank);
+              const grp = topOf(leaf);
               const color = grp
                 ? colorFor(grp.data.name)
                 : fName

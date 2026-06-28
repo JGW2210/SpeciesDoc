@@ -1,9 +1,10 @@
 # SpeciesDoc — project summary
 
-A bench tool for logging bacterial isolates and their biochemical test panels,
-with a taxonomic tree view and a custom drag-and-drop board. Built with **Vite +
-React + TypeScript** and **Supabase**. Deployed to **GitHub Pages** at
-**https://jgw2210.github.io/SpeciesDoc**.
+A bench tool for logging microbial specimens and their ID test panels, across
+**three sections — Bacteria, Viruses, Parasites** (top-level toggle) — each with
+a List view, a taxonomic tree view (Radial / Dendrogram / Outline), and a custom
+drag-and-drop board. Built with **Vite + React + TypeScript** and **Supabase**.
+Deployed to **GitHub Pages** at **https://jgw2210.github.io/SpeciesDoc**.
 
 Use this file to resume work in a fresh session — it captures the architecture,
 data model, conventions, and what's done / outstanding.
@@ -13,9 +14,9 @@ data model, conventions, and what's done / outstanding.
 ## Repo & workflow
 
 - **GitHub repo:** `jgw2210/speciesdoc` (default branch `main`).
-- **Working branch:** `claude/adoring-lovelace-h07m2w`. Develop here, open a PR
-  into `main`, and merge. (This session has been merging each change as its own
-  small PR — #1 through #25 so far.)
+- **Working branch:** the active feature branch (most recently
+  `claude/happy-heisenberg-knft2f`). Develop there, open a PR into `main`, and
+  merge. Each change ships as its own small PR (the project is past #47).
 - **Deploy:** `.github/workflows/deploy.yml` builds and publishes to GitHub
   Pages on every push to `main`. Pages **Source** must be set to **GitHub
   Actions** (Settings → Pages — already done). Occasionally a deploy sticks in
@@ -30,9 +31,10 @@ data model, conventions, and what's done / outstanding.
 
 ## Tech stack / dependencies
 
-- React 18, Vite 5, TypeScript 5.
+- React 18, Vite 5, TypeScript 5 (strict; `noUnusedLocals`/`noUnusedParameters`).
 - `@supabase/supabase-js` for data.
-- `d3-hierarchy`, `d3-shape`, `d3-polygon` for the radial tree.
+- `d3-hierarchy` + `d3-polygon` (tree layout / radial hulls) and `d3-zoom` +
+  `d3-selection` (pan/zoom). `d3-shape` is a leftover dep, no longer imported.
 - No CSS framework — all styling is hand-written in `src/index.css` using CSS
   custom properties. Design language = the Gram stain (crystal violet / safranin
   reagent colours), fonts Space Grotesk (display) / Inter (body) / JetBrains
@@ -60,8 +62,16 @@ data model, conventions, and what's done / outstanding.
   other_notes`. `gram` is the unified **Staining** field — values
   `Positive / Negative / Variable / Acid-fast` (the old separate `afb` column
   was folded into it and dropped; see migration `2026-06-25_merge_afb_into_gram.sql`).
-- **`board`** — single row (`id = 'main'`) holding the Board view's layout as
-  `data` jsonb. Shape in `src/lib/board.ts`.
+- **`viruses`** — one row per virus. Same base columns + a virus panel:
+  `genome_type, envelope, capsid, morphology, host, transmission, tropism,
+  other_notes`.
+- **`parasites`** — one row per parasite. Same base + a parasite panel:
+  `parasite_group, stage, motility, host, transmission, site, diagnostic,
+  other_notes`.
+- **`board`** — one row **per domain** (`id` = `main` / `virus` / `parasite`),
+  each holding that section's Board layout as `data` jsonb. Shape in
+  `src/lib/board.ts`. (Viruses + parasites tables added by migration
+  `2026-06-27_add_virus_parasite.sql`.)
 
 ## Domains (Bacteria / Viruses / Parasites)
 
@@ -108,18 +118,24 @@ full-width.
 
 ### Key files
 
-- `src/types.ts` — `Species`, `SpeciesDraft` (form fields; excludes
-  `id/created_at/lineage`), `TestKey` (test columns; excludes name fields),
-  `Lineage`.
-- `src/data/categories.ts` — **single source of truth** for the test panel.
-  `CATEGORIES` (each: key, label, short, type, options/hint), `CATEGORY_BY_KEY`,
-  `CATEGORY_GROUPS` (collapsible form sections: Staining, Microscopy &
-  morphology, Key enzymes, Biochemical & metabolism, Culture, Notes),
-  `DEFAULT_OPEN_GROUPS`. Field `type`s: `sign` (+/−/variable segmented), `gram`,
-  `haemolysis` (α/β/γ), `of` (O/F), `choice` (grouped chips, e.g. motility),
-  `text`, `textarea`. Adding a test here makes it flow into the form, the card
-  readout, and the ID filter automatically — only the DB column + `types.ts`
-  need separate edits.
+- `src/types.ts` — **`Specimen`** is the generic row: a typed base
+  (`id, created_at, genus, species, old_name, lineage`) **plus a per-test index
+  signature** so each domain's panel columns are addressed by key. **`tv(row,
+  key)`** reads a test value as a string (`""` when unset/non-string) — use it
+  everywhere instead of `row[key]`, since the index type is `string | null |
+  Lineage`. `SpecimenDraft` is declared explicitly (not `Omit`, which collapses
+  the base types under the index signature). `Species`/`SpeciesDraft`/`TestKey`
+  are kept as aliases. `Lineage` carries `realm?` (viruses) above `kingdom`.
+- `src/data/categories.ts` — the **bacterial** test panel (the other two domains
+  define their own in `src/domains/virus.ts` / `parasite.ts`). `CATEGORIES`
+  (each: key, label, short, type, options?, suggestions?, hint?),
+  `CATEGORY_BY_KEY`, `CATEGORY_GROUPS` (collapsible form sections: Staining,
+  Microscopy & morphology, Key enzymes, Biochemical & metabolism, Culture,
+  Notes), `DEFAULT_OPEN_GROUPS`. Field `type`s: `sign` (+/−/variable segmented),
+  `gram`, `haemolysis` (α/β/γ), `of` (O/F), `choice` (grouped chips, e.g.
+  motility), `text`, `textarea`. Adding a test here flows it into the form, card
+  readout, and ID filter automatically — only the DB column + (for back-compat)
+  `types.ts` need separate edits. (`Category.key` is now a plain `string`.)
 - `src/components/SpeciesForm.tsx` — entry/edit form. Collapsible test sections;
   the `choice` (motility) field is itself collapsible (closed by default).
 - `src/components/SpeciesList.tsx` — grouped by staining band (Gram-positive /
@@ -136,8 +152,12 @@ full-width.
   the board chips).
 - `src/components/TreeView.tsx` — the tree view. A `TreeView` container owns a
   three-way **Radial / Dendrogram / Outline** layout toggle, a shared **search**
-  box, and the shared detail drawer (click a tip → lineage breadcrumb + readout +
-  edit). Topology is `buildTaxonomy` (in `lib/taxonomy.ts`) → phylum → (class,
+  box, and the shared **detail panel** (click a tip → lineage breadcrumb +
+  readout + edit) — docked centre-bottom of the viewport (`.treedetail`,
+  `position: fixed`) so it never collides with the tree controls. The container
+  also applies the domain's `lineageFor` override to every row before building,
+  so curated lineages render without a re-fetch. Topology is `buildTaxonomy` (in
+  `lib/taxonomy.ts`) → phylum → (class,
   Proteobacteria only, for α/β/γ) → genus → isolate. The two SVG layouts share
   interaction logic via the `useTreeNav` hook (collapse overrides, focus/re-root,
   pan/zoom), the `useFit` search-fit effect, and the `TreeControls` component
@@ -221,12 +241,20 @@ full-width.
 
 ## Outstanding / possible next steps
 
-- Touch-friendly drag-and-drop on the Board (current DnD is native HTML5, so
-  mobile dragging is limited).
-- Reorder chips within a zone; move subcategories between categories.
-- Tree: zoom/pan for large trees; tune the genus auto-collapse threshold (3).
 - A **"force re-fetch lineage"** action for already-placed rows (current backfill
-  skips them), to repair stale GBIF caches without editing + re-saving.
+  skips `NONE`/empty only), to repair stale GBIF caches without editing +
+  re-saving. (Worked around for curated data by the display-time override, but a
+  real refresh is still wanted — this limitation has bitten class/order/realm.)
+- **Virus/parasite panels** are a first draft — tune fields per the user's needs.
+  Likewise the new domains' List bands are neutral grey (vs the Gram colours);
+  could be domain-tinted. Masthead mark is still the bacterial streak-plate.
+- Extend the curated maps as data grows: `VIRAL_LINEAGES` (viruses GBIF misses),
+  `CLASS_BY_GENUS` / `PHYLUM_BY_GENUS` / `MODERN_ORDER` (bacteria); consider a
+  parasite `lineageFor` if GBIF misses any.
+- Touch-friendly drag-and-drop on the Board (current DnD is native HTML5).
+- Reorder chips within a zone; move subcategories between categories.
+- Tune the genus auto-collapse threshold (3); tighten dendrogram `COL_W` (156)
+  now that columns are rank-fixed.
 - Optional: confirm on subcategory delete; CSV export of a filtered view.
 - Auth / per-user data if it ever stops being a personal single-user log.
 

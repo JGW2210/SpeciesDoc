@@ -1,4 +1,4 @@
-import type { Species } from "../types";
+import type { Lineage, Species } from "../types";
 import { gramGroupOf, binomial } from "./format";
 
 // A node in the taxonomic tree handed to d3.hierarchy.
@@ -190,6 +190,15 @@ export interface TaxonomyOptions {
 type NbRank = "realm" | "kingdom" | "phylum" | "class" | "order" | "family";
 const NB_RANKS: NbRank[] = ["realm", "kingdom", "phylum", "class", "order", "family"];
 
+// A lineage's value at a rank, treating GBIF's placeholder kingdom "Viruses" as
+// absent. GBIF tops every virus at kingdom "Viruses" (not a real ICTV rank),
+// which otherwise forks a taxon away from curated rows carrying the true kingdom
+// (e.g. Heunggongvirae) — so drop it and let the back-fill supply the real one.
+function linRank(lin: Lineage, rank: NbRank): string | null | undefined {
+  const v = lin[rank];
+  return rank === "kingdom" && v === "Viruses" ? null : v;
+}
+
 // GBIF's virus backbone often returns a partial lineage (e.g. phylum but no
 // realm/kingdom), while the curated map supplies the full chain for the genera
 // it knows. Built naively, the same taxon then attaches under two different
@@ -202,7 +211,7 @@ function ancestryMap(species: Species[]): Map<string, Partial<Record<NbRank, str
   for (const s of species) {
     const lin = s.lineage;
     if (!lin || lin.matchType === "NONE") continue;
-    const present = NB_RANKS.map((r) => [r, lin[r]] as const).filter(([, v]) => v) as [
+    const present = NB_RANKS.map((r) => [r, linRank(lin, r)] as const).filter(([, v]) => v) as [
       NbRank,
       string,
     ][];
@@ -258,7 +267,10 @@ export function buildTaxonomy(species: Species[], opts: TaxonomyOptions = {}): T
         // (no duplicate forked subtree). Filling from the deepest present rank
         // first picks up the longest known chain.
         const chain: Partial<Record<NbRank, string>> = {};
-        for (const r of NB_RANKS) if (lin[r]) chain[r] = lin[r] as string;
+        for (const r of NB_RANKS) {
+          const v = linRank(lin, r);
+          if (v) chain[r] = v;
+        }
         if (anc) {
           for (let i = NB_RANKS.length - 1; i >= 0; i--) {
             const r = NB_RANKS[i];

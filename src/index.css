@@ -1681,6 +1681,8 @@ textarea {
 .outline__name {
   font-weight: 550;
 }
+.outline__toggle--realm .outline__name,
+.outline__toggle--kingdom .outline__name,
 .outline__toggle--phylum .outline__name {
   font-family: var(--font-display);
   font-weight: 600;
@@ -1759,6 +1761,22 @@ textarea {
   paint-order: stroke;
   stroke: #fff;
   stroke-width: 4px;
+}
+
+/* realm / phylum ring labels in the radial (between the hulls) */
+.tree__ringlabel {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+}
+.tree__ringlabel:hover {
+  text-decoration: underline;
 }
 
 /* collapse handle (the "−" on an expanded, collapsible node) */

@@ -38,6 +38,10 @@ export interface DomainConfig {
   // misplaces — used by viruses (sparse coverage) and parasites (inconsistent
   // protist taxonomy). Returns null to fall back to GBIF.
   lineageFor?: (genus: string, species: string) => Lineage | null;
+  // Optional reclassifier applied to a GBIF-matched lineage at display time (when
+  // no curated override matched) — parasites use it to lift GBIF's deprecated
+  // Chromista/Protozoa kingdoms onto the modern eukaryote supergroups.
+  reclassify?: (lin: Lineage) => Lineage;
 }
 
 export const BACTERIA: DomainConfig = {

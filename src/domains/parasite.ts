@@ -1,6 +1,7 @@
 import type { Category, CategoryGroup } from "../data/categories";
 import { tv, type Specimen } from "../types";
 import { parasiteLineage } from "../lib/parasiteLineage";
+import { modernEukaryote } from "../lib/parasiteTaxonomy";
 import type { Band, DomainConfig } from "./index";
 
 // Identification panel for parasites (protozoa, helminths, ectoparasites).
@@ -109,4 +110,5 @@ export const PARASITE: DomainConfig = {
   bandOf,
   bacterial: false,
   lineageFor: parasiteLineage,
+  reclassify: modernEukaryote,
 };

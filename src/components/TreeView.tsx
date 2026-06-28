@@ -293,24 +293,23 @@ interface TreeViewProps {
 }
 
 export default function TreeView({ species, enriching, onRefreshLineage, onEdit }: TreeViewProps) {
-  const { lineageFor } = useDomain();
+  const { lineageFor, reclassify } = useDomain();
   const [mode, setMode] = useState<Layout>("dendro");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Species | null>(null);
 
-  // Apply the domain's curated lineage override (e.g. viruses) at display time,
-  // so the tree is correct even for rows whose cached lineage predates the map
-  // or came from GBIF (which lacks realm). Mirrors the bacterial corrections.
-  const items = useMemo(
-    () =>
-      lineageFor
-        ? species.map((s) => {
-            const o = lineageFor(s.genus, s.species);
-            return o ? { ...s, lineage: o } : s;
-          })
-        : species,
-    [species, lineageFor],
-  );
+  // Fix up each row's lineage at display time (so cached rows correct without a
+  // re-fetch): a curated override wins; otherwise a domain reclassifier (parasites
+  // → modern eukaryote supergroups) is applied to the GBIF-matched lineage.
+  const items = useMemo(() => {
+    if (!lineageFor && !reclassify) return species;
+    return species.map((s) => {
+      const curated = lineageFor?.(s.genus, s.species);
+      if (curated) return { ...s, lineage: curated };
+      if (reclassify && s.lineage) return { ...s, lineage: reclassify(s.lineage) };
+      return s;
+    });
+  }, [species, lineageFor, reclassify]);
 
   if (species.length === 0) {
     return (

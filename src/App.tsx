@@ -49,14 +49,10 @@ export default function App() {
   // signed-in user's own list (or everyone, for a signed-out guest). A non-null
   // value is an explicit pick from the dropdown.
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
-  const effectiveOwner = ownerFilter !== null ? ownerFilter : currentUserId ?? ALL_OWNERS;
   // Board view has two independent pickers: which board to display, and which
   // contributor's organisms fill the draggable palette. null = use the default.
   const [boardOwnerFilter, setBoardOwnerFilter] = useState<string | null>(null);
   const [poolOwnerFilter, setPoolOwnerFilter] = useState<string | null>(null);
-  // Board defaults to your own; palette defaults to everyone's organisms.
-  const boardViewOwner = boardOwnerFilter !== null ? boardOwnerFilter : currentUserId;
-  const poolViewOwner = poolOwnerFilter !== null ? poolOwnerFilter : ALL_OWNERS;
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -100,17 +96,16 @@ export default function App() {
     };
   }, []);
 
-  // Contributor options for the dropdown: always "All", then "My entries" when
-  // signed in, then every other contributor that has rows in this list.
+  // Contributor options for the dropdowns: "My entries" when signed in, then
+  // every other contributor that has rows in this list. (No "All contributors" —
+  // each view shows exactly one contributor's data to avoid noisy overlap.)
   const ownerOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of species) {
       const key = s.owner ?? UNATTRIBUTED;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    const opts: { value: string; label: string; count: number }[] = [
-      { value: ALL_OWNERS, label: "All contributors", count: species.length },
-    ];
+    const opts: { value: string; label: string; count: number }[] = [];
     if (currentUserId) {
       opts.push({ value: currentUserId, label: "My entries", count: counts.get(currentUserId) ?? 0 });
     }
@@ -125,6 +120,26 @@ export default function App() {
     return opts;
   }, [species, ownerNames, currentUserId]);
 
+  // Selectable boards for the Board dropdown: your own first, then every other
+  // contributor that has organisms (a proxy for "users who may have a board").
+  const boardOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [];
+    if (currentUserId) opts.push({ value: currentUserId, label: "My board" });
+    for (const o of ownerOptions) {
+      if (o.value === UNATTRIBUTED || o.value === currentUserId) continue;
+      opts.push({ value: o.value, label: o.label });
+    }
+    return opts;
+  }, [ownerOptions, currentUserId]);
+
+  // Default contributor when nothing is explicitly picked: your own data when
+  // signed in, otherwise the first available contributor (guests have no "own").
+  const fallbackOwner = currentUserId ?? ownerOptions[0]?.value ?? ALL_OWNERS;
+  const effectiveOwner = ownerFilter ?? fallbackOwner;
+  const poolViewOwner = poolOwnerFilter ?? fallbackOwner;
+  const boardViewOwner =
+    boardOwnerFilter !== null ? boardOwnerFilter : currentUserId ?? boardOptions[0]?.value ?? null;
+
   // The rows shown in the List and Tree, after the "Viewing" contributor filter.
   const visibleSpecies = useMemo(
     () => filterByOwner(species, effectiveOwner),
@@ -136,18 +151,6 @@ export default function App() {
     () => filterByOwner(species, poolViewOwner),
     [species, poolViewOwner],
   );
-
-  // Selectable boards for the Board dropdown: your own first, then every other
-  // contributor that has organisms (a proxy for "users who may have a board").
-  const boardOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [];
-    if (currentUserId) opts.push({ value: currentUserId, label: "My board" });
-    for (const o of ownerOptions) {
-      if (o.value === ALL_OWNERS || o.value === UNATTRIBUTED || o.value === currentUserId) continue;
-      opts.push({ value: o.value, label: o.label });
-    }
-    return opts;
-  }, [ownerOptions, currentUserId]);
 
   // The signed-in user's own rows — used for duplicate detection in the form, so
   // logging a name only clashes with your own list, not other people's.

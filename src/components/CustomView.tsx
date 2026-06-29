@@ -6,6 +6,7 @@ import { useDomain } from "../domains";
 import Readout from "./Readout";
 import {
   EMPTY_BOARD,
+  MAX_DEPTH,
   PRESET_COLORS,
   newCat,
   newSub,
@@ -34,6 +35,58 @@ interface CustomViewProps {
   // Public label of the displayed board's owner, for the read-only notice.
   ownerLabel: string | null;
   onEdit: (s: Species) => void;
+}
+
+// --- recursive helpers over the nested subcategory tree ---------------------
+function findSubTree(subs: BoardSub[], id: string): BoardSub | null {
+  for (const s of subs) {
+    if (s.id === id) return s;
+    const found = findSubTree(s.subs, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function mapSubTree(subs: BoardSub[], id: string, fn: (s: BoardSub) => BoardSub): BoardSub[] {
+  return subs.map((s) => {
+    if (s.id === id) return fn(s);
+    return s.subs.length ? { ...s, subs: mapSubTree(s.subs, id, fn) } : s;
+  });
+}
+
+function removeSubTree(subs: BoardSub[], id: string): BoardSub[] {
+  return subs
+    .filter((s) => s.id !== id)
+    .map((s) => (s.subs.length ? { ...s, subs: removeSubTree(s.subs, id) } : s));
+}
+
+function addSubTree(subs: BoardSub[], parentId: string | null, child: BoardSub): BoardSub[] {
+  if (parentId === null) return [...subs, child];
+  return subs.map((s) =>
+    s.id === parentId
+      ? { ...s, subs: [...s.subs, child] }
+      : s.subs.length
+        ? { ...s, subs: addSubTree(s.subs, parentId, child) }
+        : s,
+  );
+}
+
+// Reorder dragId before targetId, but only within the array that holds both —
+// i.e. reorder among siblings only, never across parents.
+function reorderSubTree(subs: BoardSub[], dragId: string, targetId: string): BoardSub[] {
+  if (dragId === targetId) return subs;
+  if (subs.some((s) => s.id === dragId) && subs.some((s) => s.id === targetId)) {
+    const arr = [...subs];
+    const [m] = arr.splice(arr.findIndex((s) => s.id === dragId), 1);
+    const to = arr.findIndex((s) => s.id === targetId);
+    arr.splice(to < 0 ? arr.length : to, 0, m);
+    return arr;
+  }
+  return subs.map((s) => (s.subs.length ? { ...s, subs: reorderSubTree(s.subs, dragId, targetId) } : s));
+}
+
+function countIsolatesInSubs(subs: BoardSub[]): number {
+  return subs.reduce((n, s) => n + s.isolateIds.length + countIsolatesInSubs(s.subs), 0);
 }
 
 export default function CustomView({
@@ -137,15 +190,16 @@ export default function CustomView({
   const mutateCat = (catId: string, fn: (c: BoardCat) => BoardCat) =>
     setBoard((b) => ({ categories: b.categories.map((c) => (c.id === catId ? fn(c) : c)) }));
 
+  // Update a subcategory at any nesting depth, addressed by its id.
   const mutateSub = (catId: string, subId: string, fn: (s: BoardSub) => BoardSub) =>
-    mutateCat(catId, (c) => ({ ...c, subs: c.subs.map((s) => (s.id === subId ? fn(s) : s)) }));
+    mutateCat(catId, (c) => ({ ...c, subs: mapSubTree(c.subs, subId, fn) }));
 
   const addCategory = () =>
     setBoard((b) => ({ categories: [...b.categories, newCat(b.categories.length + 1)] }));
 
   const removeCategory = (catId: string) => {
     const cat = board.categories.find((c) => c.id === catId);
-    const n = cat ? cat.isolateIds.length + cat.subs.reduce((a, s) => a + s.isolateIds.length, 0) : 0;
+    const n = cat ? cat.isolateIds.length + countIsolatesInSubs(cat.subs) : 0;
     const ok = window.confirm(
       `Delete the category “${cat?.name ?? ""}”${
         n > 0 ? ` and its arrangement of ${n} isolate${n === 1 ? "" : "s"}` : ""
@@ -155,11 +209,16 @@ export default function CustomView({
     setBoard((b) => ({ categories: b.categories.filter((c) => c.id !== catId) }));
   };
 
-  const addSub = (catId: string) =>
-    mutateCat(catId, (c) => ({ ...c, subs: [...c.subs, newSub(c.subs.length + 1)] }));
+  // Add a subcategory under a parent: parentSubId null = directly under the
+  // category, otherwise nested under the given subcategory.
+  const addSub = (catId: string, parentSubId: string | null) =>
+    mutateCat(catId, (c) => {
+      const siblings = parentSubId === null ? c.subs : findSubTree(c.subs, parentSubId)?.subs ?? [];
+      return { ...c, subs: addSubTree(c.subs, parentSubId, newSub(siblings.length + 1)) };
+    });
 
   const removeSub = (catId: string, subId: string) =>
-    mutateCat(catId, (c) => ({ ...c, subs: c.subs.filter((s) => s.id !== subId) }));
+    mutateCat(catId, (c) => ({ ...c, subs: removeSubTree(c.subs, subId) }));
 
   // Reorder helpers: insert the dragged item before the drop target.
   const moveCategory = (dragId: string, targetId: string) =>
@@ -174,17 +233,9 @@ export default function CustomView({
       return { categories: cats };
     });
 
+  // Reorder a subcategory among its siblings (any nesting depth).
   const moveSub = (catId: string, dragSubId: string, targetSubId: string) =>
-    mutateCat(catId, (c) => {
-      if (dragSubId === targetSubId) return c;
-      const subs = [...c.subs];
-      const from = subs.findIndex((s) => s.id === dragSubId);
-      if (from < 0) return c;
-      const [m] = subs.splice(from, 1);
-      const to = subs.findIndex((s) => s.id === targetSubId);
-      subs.splice(to < 0 ? subs.length : to, 0, m);
-      return { ...c, subs };
-    });
+    mutateCat(catId, (c) => ({ ...c, subs: reorderSubTree(c.subs, dragSubId, targetSubId) }));
 
   // subId null targets the category's own isolate list.
   const addIsolate = (catId: string, subId: string | null, isoId: string) => {
@@ -257,6 +308,104 @@ export default function CustomView({
             />
           );
         })}
+      </div>
+    );
+  };
+
+  // Render a subcategory and (recursively) its nested children. `depth` counts
+  // the category as 1, so subcategories start at depth 2 and may nest while
+  // depth < MAX_DEPTH.
+  const renderSub = (catId: string, sub: BoardSub, depth: number, parentColor: string) => {
+    const subColor = sub.color ?? parentColor;
+    const subTotal = sub.isolateIds.length + countIsolatesInSubs(sub.subs);
+    // Show its own isolate drop zone when it has no children, or already holds
+    // isolates directly (mirrors the category behaviour).
+    const showDirect = sub.subs.length === 0 || sub.isolateIds.length > 0;
+    const canNest = depth < MAX_DEPTH;
+    return (
+      <div key={sub.id} className="csub" style={{ ["--sub" as string]: subColor }}>
+        <header
+          className={`csub__head${subDrop === sub.id ? " is-drop" : ""}`}
+          onDragOver={(e) => {
+            if (drag?.kind === "sub" && drag.catId === catId && drag.subId !== sub.id) {
+              e.preventDefault();
+              if (subDrop !== sub.id) setSubDrop(sub.id);
+            }
+          }}
+          onDragLeave={() => setSubDrop((cur) => (cur === sub.id ? null : cur))}
+          onDrop={(e) => {
+            if (drag?.kind === "sub" && drag.catId === catId) {
+              e.preventDefault();
+              e.stopPropagation();
+              moveSub(catId, drag.subId, sub.id);
+            }
+            endReorder();
+          }}
+        >
+          {!readOnly && (
+            <span
+              className="grip"
+              draggable
+              title="Drag to reorder"
+              onDragStart={(e) => {
+                setDrag({ kind: "sub", catId, subId: sub.id });
+                e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "sub" }));
+                e.dataTransfer.effectAllowed = "move";
+              }}
+              onDragEnd={endReorder}
+            >
+              ⠿
+            </span>
+          )}
+          <button
+            type="button"
+            className={`chev${sub.collapsed ? "" : " is-open"}`}
+            aria-label={sub.collapsed ? "Expand" : "Collapse"}
+            onClick={() => mutateSub(catId, sub.id, (s) => ({ ...s, collapsed: !s.collapsed }))}
+          >
+            ▸
+          </button>
+          <ColorDot
+            color={subColor}
+            readOnly={readOnly}
+            onPick={(c) => mutateSub(catId, sub.id, (s) => ({ ...s, color: c }))}
+          />
+          <input
+            className="csub__name"
+            value={sub.name}
+            readOnly={readOnly}
+            onChange={(e) => mutateSub(catId, sub.id, (s) => ({ ...s, name: e.target.value }))}
+            aria-label="Subcategory name"
+          />
+          <span className="csub__count">{subTotal}</span>
+          {!readOnly && (
+            <>
+              {canNest && (
+                <button type="button" className="ccat__act" onClick={() => addSub(catId, sub.id)}>
+                  + Subcategory
+                </button>
+              )}
+              <button
+                type="button"
+                className="ccat__del"
+                title="Delete subcategory"
+                onClick={() => removeSub(catId, sub.id)}
+              >
+                ×
+              </button>
+            </>
+          )}
+        </header>
+        {!sub.collapsed && (
+          <div className="ccat__body">
+            {showDirect && renderDrop(catId, sub.id, sub.isolateIds, subColor)}
+            {sub.subs.length > 0 && (
+              <div className="ccat__subs">
+                {sub.subs.map((child) => renderSub(catId, child, depth + 1, subColor))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -409,7 +558,7 @@ export default function CustomView({
                   <span className="ccat__count">{total}</span>
                   {!readOnly && (
                     <>
-                      <button type="button" className="ccat__act" onClick={() => addSub(cat.id)}>
+                      <button type="button" className="ccat__act" onClick={() => addSub(cat.id, null)}>
                         + Subcategory
                       </button>
                       <button
@@ -433,83 +582,7 @@ export default function CustomView({
                     )}
                     {cat.subs.length > 0 && (
                       <div className="ccat__subs">
-                        {cat.subs.map((sub) => {
-                          const subColor = sub.color ?? cat.color;
-                          return (
-                            <div key={sub.id} className="csub" style={{ ["--sub" as string]: subColor }}>
-                              <header
-                                className={`csub__head${subDrop === sub.id ? " is-drop" : ""}`}
-                                onDragOver={(e) => {
-                                  if (drag?.kind === "sub" && drag.catId === cat.id && drag.subId !== sub.id) {
-                                    e.preventDefault();
-                                    if (subDrop !== sub.id) setSubDrop(sub.id);
-                                  }
-                                }}
-                                onDragLeave={() => setSubDrop((cur) => (cur === sub.id ? null : cur))}
-                                onDrop={(e) => {
-                                  if (drag?.kind === "sub" && drag.catId === cat.id) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    moveSub(cat.id, drag.subId, sub.id);
-                                  }
-                                  endReorder();
-                                }}
-                              >
-                                {!readOnly && (
-                                  <span
-                                    className="grip"
-                                    draggable
-                                    title="Drag to reorder"
-                                    onDragStart={(e) => {
-                                      setDrag({ kind: "sub", catId: cat.id, subId: sub.id });
-                                      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "sub" }));
-                                      e.dataTransfer.effectAllowed = "move";
-                                    }}
-                                    onDragEnd={endReorder}
-                                  >
-                                    ⠿
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  className={`chev${sub.collapsed ? "" : " is-open"}`}
-                                  aria-label={sub.collapsed ? "Expand" : "Collapse"}
-                                  onClick={() =>
-                                    mutateSub(cat.id, sub.id, (s) => ({ ...s, collapsed: !s.collapsed }))
-                                  }
-                                >
-                                  ▸
-                                </button>
-                                <ColorDot
-                                  color={subColor}
-                                  readOnly={readOnly}
-                                  onPick={(c) => mutateSub(cat.id, sub.id, (s) => ({ ...s, color: c }))}
-                                />
-                                <input
-                                  className="csub__name"
-                                  value={sub.name}
-                                  readOnly={readOnly}
-                                  onChange={(e) =>
-                                    mutateSub(cat.id, sub.id, (s) => ({ ...s, name: e.target.value }))
-                                  }
-                                  aria-label="Subcategory name"
-                                />
-                                <span className="csub__count">{sub.isolateIds.length}</span>
-                                {!readOnly && (
-                                  <button
-                                    type="button"
-                                    className="ccat__del"
-                                    title="Delete subcategory"
-                                    onClick={() => removeSub(cat.id, sub.id)}
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </header>
-                              {!sub.collapsed && renderDrop(cat.id, sub.id, sub.isolateIds, subColor)}
-                            </div>
-                          );
-                        })}
+                        {cat.subs.map((sub) => renderSub(cat.id, sub, 2, cat.color))}
                       </div>
                     )}
                   </div>

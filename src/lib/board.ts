@@ -1,12 +1,17 @@
-// User-defined arrangement of isolates: categories → subcategories → isolate
-// references. Stored as a single jsonb document in the `board` table.
+// User-defined arrangement of isolates: categories → nested subcategories →
+// isolate references. Stored as a single jsonb document in the `board` table.
+
+// The maximum nesting depth, counting the category as layer 1. So a category
+// may hold subcategories up to 3 levels deep (layers 2–4).
+export const MAX_DEPTH = 4;
 
 export interface BoardSub {
   id: string;
   name: string;
-  color: string | null; // null = inherit the category colour
+  color: string | null; // null = inherit the parent colour
   collapsed: boolean;
   isolateIds: string[];
+  subs: BoardSub[]; // nested subcategories (empty at the deepest layer)
 }
 
 export interface BoardCat {
@@ -42,7 +47,14 @@ export function uid(prefix: string): string {
 }
 
 export function newSub(index: number): BoardSub {
-  return { id: uid("sub"), name: `Subcategory ${index}`, color: null, collapsed: false, isolateIds: [] };
+  return {
+    id: uid("sub"),
+    name: `Subcategory ${index}`,
+    color: null,
+    collapsed: false,
+    isolateIds: [],
+    subs: [],
+  };
 }
 
 export function newCat(index: number): BoardCat {
@@ -56,13 +68,22 @@ export function newCat(index: number): BoardCat {
   };
 }
 
-// Old saved boards may lack the category-level isolateIds, so backfill it.
+// Recursively backfill fields older saved boards may lack (category/sub-level
+// isolateIds, and the nested `subs` array introduced with deep nesting).
+function normalizeSub(s: BoardSub): BoardSub {
+  return {
+    ...s,
+    isolateIds: s.isolateIds ?? [],
+    subs: (s.subs ?? []).map(normalizeSub),
+  };
+}
+
 export function normalizeBoard(b: Board | null | undefined): Board {
   return {
     categories: (b?.categories ?? []).map((c) => ({
       ...c,
       isolateIds: c.isolateIds ?? [],
-      subs: (c.subs ?? []).map((s) => ({ ...s, isolateIds: s.isolateIds ?? [] })),
+      subs: (c.subs ?? []).map(normalizeSub),
     })),
   };
 }

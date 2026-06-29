@@ -2384,6 +2384,8 @@ textarea {
 /* date moved to the card's bottom-right (out of the name row) */
 .card__foot {
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: flex-end;
   margin-top: 10px;
 }
@@ -2440,4 +2442,87 @@ textarea {
   font-size: 0.82rem;
   text-decoration: underline;
   padding: 0;
+}
+
+/* ------------------------------------------------------------------ auth --- */
+/* Top-of-page auth bar: guest notice + sign-in, or the signed-in account row. */
+.authbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.authbar__muted {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.authbar__who {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  margin-right: auto;
+}
+.authbar__who strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}
+
+.authform {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.authform .field__input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.authform__tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.authform__tab {
+  border: none;
+  background: none;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.authform__tab.is-on {
+  background: var(--accent);
+  color: #fff;
+}
+.authform__actions {
+  display: flex;
+  gap: 8px;
+}
+.authform__notice {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--accent-deep);
+  font-size: 0.85rem;
+}
+
+/* Owner badge on a list card: "you" or another user's label. */
+.card__owner {
+  margin-left: auto;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
 }

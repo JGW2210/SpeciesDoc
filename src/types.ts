@@ -18,6 +18,7 @@ export interface Lineage {
 export interface Specimen {
   id: string;
   created_at: string;
+  owner: string | null; // auth user id of whoever logged it (null for pre-auth rows)
   genus: string;
   species: string;
   old_name: string | null; // optional synonym / former name, used for lineage fallback

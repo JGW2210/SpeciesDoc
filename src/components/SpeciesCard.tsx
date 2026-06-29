@@ -8,6 +8,8 @@ interface SpeciesCardProps {
   index: number;
   isEditing: boolean;
   collapsed: boolean; // global "name only" state from the list toggle
+  owned: boolean; // true when the signed-in user logged this row
+  ownerName: string | null; // public label of whoever logged it
   onEdit: (s: Species) => void;
   onDelete: (id: string) => void;
 }
@@ -17,6 +19,8 @@ export default function SpeciesCard({
   index,
   isEditing,
   collapsed,
+  owned,
+  ownerName,
   onEdit,
   onDelete,
 }: SpeciesCardProps) {
@@ -50,7 +54,7 @@ export default function SpeciesCard({
           <em>{binomial(species.genus, species.species)}</em>
         </h3>
         <div className="card__meta">
-          {confirming ? (
+          {!owned ? null : confirming ? (
             <span className="card__confirm">
               <button className="linkbtn linkbtn--danger" onClick={() => onDelete(species.id)}>
                 Delete
@@ -93,6 +97,11 @@ export default function SpeciesCard({
           )}
           <div className="card__foot">
             <time dateTime={species.created_at}>{logged}</time>
+            {ownerName && (
+              <span className="card__owner" title={`Logged by ${ownerName}`}>
+                {owned ? "you" : ownerName}
+              </span>
+            )}
           </div>
         </>
       )}

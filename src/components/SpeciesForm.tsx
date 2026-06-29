@@ -27,9 +27,10 @@ function groupOptions(options: QuickOption[]): [string, QuickOption[]][] {
   return order.map((g) => [g, map.get(g)!]);
 }
 
-// Strip the server-managed fields so an existing row can seed the form.
+// Strip the server-managed fields so an existing row can seed the form. `owner`
+// is left to the database (default auth.uid() on insert; untouched on update).
 function toDraft(s: Species): SpeciesDraft {
-  const { id: _id, created_at: _created, lineage: _lineage, ...rest } = s;
+  const { id: _id, created_at: _created, owner: _owner, lineage: _lineage, ...rest } = s;
   return rest as SpeciesDraft;
 }
 
@@ -40,6 +41,9 @@ interface SpeciesFormProps {
   onEditExisting: (s: Species) => void;
   onCancelEdit: () => void;
   disabled?: boolean;
+  // True when no one is signed in — used to show a sign-in hint instead of a
+  // generic "not configured" state.
+  signedOut?: boolean;
 }
 
 export default function SpeciesForm({
@@ -49,8 +53,10 @@ export default function SpeciesForm({
   onEditExisting,
   onCancelEdit,
   disabled,
+  signedOut,
 }: SpeciesFormProps) {
-  const { categories, groups, defaultOpenGroups, genusPlaceholder, speciesPlaceholder } = useDomain();
+  const { categories, groups, defaultOpenGroups, genusPlaceholder, speciesPlaceholder, nounPlural } =
+    useDomain();
   const catByKey = useMemo(() => {
     const m: Record<string, Category> = {};
     for (const c of categories) m[c.key] = c;
@@ -148,6 +154,12 @@ export default function SpeciesForm({
           {preview ? <em>{preview}</em> : <span className="form__preview--empty">Genus species</span>}
         </p>
       </div>
+
+      {signedOut && (
+        <p className="form__editing" role="status">
+          Sign in above to add your own {nounPlural} — you can browse everyone’s without an account.
+        </p>
+      )}
 
       {isEditing && (
         <p className="form__editing">

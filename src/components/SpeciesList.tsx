@@ -51,6 +51,8 @@ interface SpeciesListProps {
   species: Species[];
   loading: boolean;
   editingId: string | null;
+  currentUserId: string | null;
+  ownerNames: Record<string, string>;
   onEdit: (s: Species) => void;
   onDelete: (id: string) => void;
 }
@@ -59,6 +61,8 @@ export default function SpeciesList({
   species,
   loading,
   editingId,
+  currentUserId,
+  ownerNames,
   onEdit,
   onDelete,
 }: SpeciesListProps) {
@@ -375,6 +379,8 @@ export default function SpeciesList({
                     index={visible}
                     isEditing={s.id === editingId}
                     collapsed={collapsed}
+                    owned={!!currentUserId && s.owner === currentUserId}
+                    ownerName={s.owner ? ownerNames[s.owner] ?? null : null}
                     onEdit={onEdit}
                     onDelete={onDelete}
                   />

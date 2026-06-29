@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../lib/auth";
 import { binomial } from "../lib/format";
 import { useDomain } from "../domains";
 import Readout from "./Readout";
@@ -28,6 +29,11 @@ interface CustomViewProps {
 
 export default function CustomView({ species, onEdit }: CustomViewProps) {
   const { boardId } = useDomain();
+  const { user } = useAuth();
+  // The Board is a personal workspace, saved per user. A ref keeps the current
+  // id available to the unmount flush without re-binding that effect.
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = user?.id ?? null;
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [query, setQuery] = useState("");
   const [overSub, setOverSub] = useState<string | null>(null);
@@ -52,46 +58,59 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const byId = useMemo(() => new Map(species.map((s) => [s.id, s])), [species]);
 
   const writeBoard = async (b: Board): Promise<boolean> => {
-    if (!supabase) return false;
+    const owner = userIdRef.current;
+    if (!supabase || !owner) return false; // only signed-in users have a saved board
     const { error } = await supabase
       .from("board")
-      .upsert({ id: boardId, data: b, updated_at: new Date().toISOString() });
+      .upsert(
+        { id: boardId, owner, data: b, updated_at: new Date().toISOString() },
+        { onConflict: "owner,id" },
+      );
     return !error;
   };
 
-  // Load the saved board once.
+  // Load this user's saved board. Re-runs when the signed-in user changes, so
+  // signing in/out swaps in the right workspace (RLS only returns your own row).
   useEffect(() => {
     let active = true;
+    loaded.current = false;
+    setBoard(EMPTY_BOARD);
     (async () => {
-      if (!supabase) {
+      if (!supabase || !user) {
         loaded.current = true;
         return;
       }
-      const { data } = await supabase.from("board").select("data").eq("id", boardId).maybeSingle();
+      const { data } = await supabase
+        .from("board")
+        .select("data")
+        .eq("id", boardId)
+        .eq("owner", user.id)
+        .maybeSingle();
       if (active && data?.data) setBoard(normalizeBoard(data.data as Board));
       loaded.current = true;
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [boardId, user]);
 
-  // Debounced persist on every change (after the initial load).
+  // Debounced persist on every change (after the initial load). Only signed-in
+  // users persist; a guest can arrange locally but nothing is saved.
   useEffect(() => {
-    if (!loaded.current || !supabase) return;
+    if (!loaded.current || !supabase || !user) return;
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await writeBoard(board);
       setSaveState(ok ? "saved" : "error");
     }, 500);
     return () => clearTimeout(t);
-  }, [board]);
+  }, [board, user]);
 
   // Flush the latest state when leaving the view, so a pending debounce isn't
   // lost on unmount (the previous cause of changes not persisting).
   useEffect(() => {
     return () => {
-      if (loaded.current && supabase) void writeBoard(boardRef.current);
+      if (loaded.current && supabase && userIdRef.current) void writeBoard(boardRef.current);
     };
   }, []);
 
@@ -231,7 +250,11 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
       <div className="cboard__bar">
         <div>
           <h2 className="cboard__title">Custom board</h2>
-          <p className="cboard__sub">Build your own categories and drag isolates in from the palette.</p>
+          <p className="cboard__sub">
+            {user
+              ? "Build your own categories and drag isolates in from the palette."
+              : "Sign in to build and save your own board — guest changes won’t be kept."}
+          </p>
         </div>
         <div className="cboard__baracts">
           {saveState !== "idle" && (

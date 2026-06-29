@@ -27,6 +27,11 @@ Built with **Vite + React + TypeScript** and **Supabase** for storage.
 - **Board view** (toggle next to List/Tree): build your own collapsible
   categories and subcategories with custom names and colours, then drag isolates
   in from the palette to arrange them however you like. Saved to a `board` table.
+- **Accounts**: anyone can browse every logged organism without signing in, but
+  adding and editing requires an account (email + password via Supabase Auth).
+  Each organism is owned by whoever logged it — you can only edit or delete your
+  own, enforced at the database level by Row Level Security. The Board layout is
+  private per account.
 - Modern names are primary and shown on the tree; phylum names are modernised
   for display (e.g. Actinobacteriota → Actinomycetota). An optional **old name /
   synonym** can be recorded per isolate — it's used as a fallback for the GBIF
@@ -46,8 +51,17 @@ npm install
 1. Make a project at [supabase.com](https://supabase.com).
 2. Open **SQL Editor → New query**, paste the contents of
    [`supabase/schema.sql`](./supabase/schema.sql), and run it. This creates the
-   `species` table and an open Row Level Security policy suitable for a personal,
-   single-user log.
+   `species`, `viruses`, `parasites`, `board`, and `profiles` tables with
+   **public-read / owner-only-write** Row Level Security, plus a trigger that
+   creates a profile row on signup.
+
+   > Upgrading an existing project that used the old open-access schema? Run
+   > [`supabase/migrations/2026-06-29_add_auth_ownership.sql`](./supabase/migrations/2026-06-29_add_auth_ownership.sql)
+   > instead — it adds ownership and the new policies without dropping your data.
+3. **Enable email auth**: in the dashboard, **Authentication → Providers →
+   Email** is on by default. For a quick start you can turn off "Confirm email"
+   under **Authentication → Sign In / Providers** so accounts work immediately;
+   leave it on for production so addresses are verified.
 
 ### 3. Add your credentials
 
@@ -77,11 +91,21 @@ npm run preview  # preview the production build
 
 ## A note on security
 
-The schema ships with an **open** RLS policy: anyone with the public anon key
-(i.e. anyone who can load the app) can read and write rows. That's intentional
-for a personal bench log. If you deploy this somewhere public or want
-per-user data, add [Supabase Auth](https://supabase.com/docs/guides/auth) and
-replace the policy in `supabase/schema.sql` with one scoped to `auth.uid()`.
+The Supabase **URL** and **publishable/anon key** in `src/config.ts` are *not*
+secrets — they are designed to ship in the browser bundle, and access is gated
+by Row Level Security on the database. Never put the `service_role` /
+`sb_secret_...` key in client code or the repo.
+
+Security is enforced by RLS, not by hiding the anon key:
+
+- **Reads are public.** Anyone, signed in or not, can view every list and
+  organism.
+- **Writes are owner-only.** Inserting, editing, or deleting a row requires
+  being signed in, and the row's `owner` must equal `auth.uid()`. The browser
+  cannot mutate another user's data even though it holds the public key.
+
+To claim organisms logged before auth was added, see the note at the bottom of
+[`supabase/migrations/2026-06-29_add_auth_ownership.sql`](./supabase/migrations/2026-06-29_add_auth_ownership.sql).
 
 ## Deploying to GitHub Pages
 

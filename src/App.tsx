@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
+import { useAuth } from "./lib/auth";
 import { fetchLineage } from "./lib/gbif";
 import { DomainProvider, DOMAINS, BACTERIA, type DomainId } from "./domains";
 import type { Species, SpeciesDraft } from "./types";
 import Header from "./components/Header";
+import AuthPanel from "./components/AuthPanel";
 import SetupBanner from "./components/SetupBanner";
 import SpeciesForm from "./components/SpeciesForm";
 import SpeciesList from "./components/SpeciesList";
@@ -12,7 +14,15 @@ import CustomView from "./components/CustomView";
 
 type View = "list" | "tree" | "custom";
 
+// Public label for an owner id, drawn from the public `profiles` table.
+export type OwnerNames = Record<string, string>;
+
 export default function App() {
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
+  // Editing is gated on being signed in (writes are also enforced by RLS).
+  const canEdit = !!user && isSupabaseConfigured;
+  const [ownerNames, setOwnerNames] = useState<OwnerNames>({});
   const [domainId, setDomainId] = useState<DomainId>("bacteria");
   const config = DOMAINS.find((d) => d.id === domainId) ?? BACTERIA;
   const [species, setSpecies] = useState<Species[]>([]);
@@ -47,6 +57,25 @@ export default function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Load the public owner labels once so cards can show who logged each row.
+  // display_name wins; otherwise fall back to the part of the email before "@".
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    (async () => {
+      const { data } = await supabase.from("profiles").select("id, email, display_name");
+      if (!active || !data) return;
+      const map: OwnerNames = {};
+      for (const p of data as { id: string; email: string | null; display_name: string | null }[]) {
+        map[p.id] = p.display_name?.trim() || p.email?.split("@")[0] || "someone";
+      }
+      setOwnerNames(map);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Best-effort: fetch GBIF lineage for one isolate and cache it on the row.
   // Silently no-ops if the lineage column is missing or the lookup fails, so it
@@ -113,11 +142,18 @@ export default function App() {
     }
   }, [species, enrichOne]);
 
-  const handleEdit = useCallback((s: Species) => {
-    setView("list"); // the form lives in List view
-    setEditing(s);
-    setFormOpen(true);
-  }, []);
+  const handleEdit = useCallback(
+    (s: Species) => {
+      // You can only edit your own organisms. Clicking another person's row
+      // (e.g. from the Board or Tree) is a no-op rather than opening a form that
+      // the database would reject on save.
+      if (!currentUserId || s.owner !== currentUserId) return;
+      setView("list"); // the form lives in List view
+      setEditing(s);
+      setFormOpen(true);
+    },
+    [currentUserId],
+  );
 
   const closeForm = useCallback(() => {
     setFormOpen(false);
@@ -126,7 +162,9 @@ export default function App() {
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!supabase) return;
+      if (!supabase || !currentUserId) return;
+      // Only owned rows can be deleted (also enforced by RLS).
+      if (species.find((x) => x.id === id)?.owner !== currentUserId) return;
       if (editing?.id === id) closeForm();
       const prev = species;
       setSpecies((s) => s.filter((x) => x.id !== id)); // optimistic
@@ -136,7 +174,7 @@ export default function App() {
         setSpecies(prev); // roll back
       }
     },
-    [species, editing, closeForm, config.table],
+    [species, editing, closeForm, config.table, currentUserId],
   );
 
   // Switch section: clear current state and let the load effect refill.
@@ -153,6 +191,8 @@ export default function App() {
     <DomainProvider config={config}>
     <div className="shell">
       <Header count={species.length} config={config} />
+
+      <AuthPanel />
 
       <div className="domainbar" role="tablist" aria-label="Section">
         {DOMAINS.map((d) => (
@@ -216,7 +256,8 @@ export default function App() {
               species={species}
               onEditExisting={handleEdit}
               onCancelEdit={closeForm}
-              disabled={!isSupabaseConfigured}
+              disabled={!canEdit}
+              signedOut={!user}
             />
           </section>
         )}
@@ -226,6 +267,8 @@ export default function App() {
               species={species}
               loading={loading}
               editingId={editing?.id ?? null}
+              currentUserId={currentUserId}
+              ownerNames={ownerNames}
               onEdit={handleEdit}
               onDelete={handleDelete}
             />
@@ -258,9 +301,16 @@ export default function App() {
             type="button"
             className="mobilebar__btn"
             aria-expanded={formOpen}
+            disabled={!canEdit}
             onClick={() => (formOpen ? closeForm() : setFormOpen(true))}
           >
-            {formOpen ? "Close" : editing ? `Edit ${config.noun}` : `＋  Add ${config.noun}`}
+            {!canEdit
+              ? "Sign in to add"
+              : formOpen
+                ? "Close"
+                : editing
+                  ? `Edit ${config.noun}`
+                  : `＋  Add ${config.noun}`}
           </button>
         </div>
       )}

@@ -15,8 +15,8 @@ data model, conventions, and what's done / outstanding.
 
 - **GitHub repo:** `jgw2210/speciesdoc` (default branch `main`).
 - **Working branch:** the active feature branch (most recently
-  `claude/happy-heisenberg-knft2f`). Develop there, open a PR into `main`, and
-  merge. Each change ships as its own small PR (the project is past #47).
+  `claude/optimistic-faraday-e7lhlq`). Develop there, open a PR into `main`, and
+  merge. Each change ships as its own small PR (the project is past #54).
 - **Deploy:** `.github/workflows/deploy.yml` builds and publishes to GitHub
   Pages on every push to `main`. Pages **Source** must be set to **GitHub
   Actions** (Settings → Pages — already done). Occasionally a deploy sticks in
@@ -90,21 +90,36 @@ from there instead of importing the bacterial constants. Rows are the generic
   test columns. The `board` table is shared, keyed per domain (`main` / `virus`
   / `parasite`). Migration: `2026-06-27_add_virus_parasite.sql`.
 - **Taxonomy**: GBIF for all three. `buildTaxonomy(species, { detailed,
-  bacterial })` — `bacterial: false` (virus/parasite) skips the bacterial name
-  corrections + Gram unplaced fallback and uses the raw GBIF lineage. GBIF's
-  virus coverage is poor, so the virus config has **`lineageFor`** (→
-  `src/lib/virusLineage.ts`, `VIRAL_LINEAGES`): a curated genus→ICTV-lineage map
-  that **overrides GBIF** in `enrichOne` (applied on save and via "Fetch
-  lineage"; matchType `"CURATED"`) **and at display time** in `TreeView` (so
-  rows cached before the map — or via GBIF, which lacks realm — still render the
-  curated lineage without a re-fetch). Extend the map as more virus genera are
-  logged. The Lineage type carries **`realm`** (viruses); the **detailed
-  dendrogram** for non-bacterial domains folds in the full available ICTV chain
-  (realm → kingdom → phylum → class → order → family → genus), skipping absent
-  ranks — so taxa classified only at realm + family (e.g. Deltavirus →
-  Ribozyviria → Kolmioviridae) still place. Lean radial/outline use the best
-  available top rank (phylum → kingdom → realm). `genusKeys` is built with the
-  same `detailed` flag as its view so collapse keys line up.
+  bacterial })`. Each domain corrects/curates GBIF differently via two
+  **`DomainConfig` hooks** (both display-time, so cached rows fix without a
+  re-fetch or DB write):
+  - **`lineageFor(genus, species)`** — a curated genus→lineage map that
+    **replaces** GBIF for genera the backbone misses/misplaces. Viruses:
+    `src/lib/virusLineage.ts` (`VIRAL_LINEAGES`, ICTV). Parasites:
+    `src/lib/parasiteLineage.ts` (`PARASITE_LINEAGES`, modern eukaryote scheme).
+    Applied in `enrichOne` (on save + "Fetch lineage"; matchType `"CURATED"`)
+    **and** in `TreeView`. Returns null → fall through to GBIF.
+  - **`reclassify(lin)`** — transforms a *GBIF-matched* lineage (applied in
+    `TreeView` only, when no curated override matched). Parasites set it to
+    `modernEukaryote` (`src/lib/parasiteTaxonomy.ts`), which lifts GBIF's
+    deprecated **Chromista/Protozoa** kingdoms onto the modern eukaryote
+    **supergroups** in the `realm` slot — **SAR** (Alveolata/Stramenopiles/
+    Rhizaria; e.g. Myzozoa → SAR · Alveolata · Apicomplexa), **Amoebozoa**,
+    **Metamonada**, **Discoba**, **Opisthokonta** (Animalia + Fungi) — keeping
+    GBIF's class/order/family beneath. Curated map wins over it.
+- **Per-domain topology** (`buildTaxonomy`):
+  - **Bacteria** (`bacterial: true`): `Bacteria` root (= kingdom) → phylum →
+    class → order → **family** → genus, the same for every view, with the
+    bacterial name corrections (below). Radial keeps **phylum** as its top
+    (hull) level and surfaces class/order/family as ring labels.
+  - **Viruses / parasites** (`bacterial: false`): walk the chain realm → kingdom
+    → phylum (→ class → order → family for the **detailed** dendrogram; the lean
+    radial/outline stop at phylum). Absent ranks are skipped, then **back-filled**
+    from `ancestryMap` (below) so a partial GBIF lineage lands under the same
+    ancestors as a complete one (no forked duplicate subtree). `genusKeys` uses
+    the same `detailed` flag as its view so collapse keys line up.
+- `Lineage` carries **`realm`** (top slot) — viral ICTV realm or parasite
+  eukaryote supergroup; null for bacteria.
 - Switching domains remounts the main content (`<main key={domainId}>`) so each
   section's form/board/tree state is fresh; the active table is reloaded.
 
@@ -154,42 +169,57 @@ full-width.
   three-way **Radial / Dendrogram / Outline** layout toggle, a shared **search**
   box, and the shared **detail panel** (click a tip → lineage breadcrumb +
   readout + edit) — docked centre-bottom of the viewport (`.treedetail`,
-  `position: fixed`) so it never collides with the tree controls. The container
-  also applies the domain's `lineageFor` override to every row before building,
-  so curated lineages render without a re-fetch. Topology is `buildTaxonomy` (in
-  `lib/taxonomy.ts`) → phylum → (class,
-  Proteobacteria only, for α/β/γ) → genus → isolate. The two SVG layouts share
-  interaction logic via the `useTreeNav` hook (collapse overrides, focus/re-root,
-  pan/zoom), the `useFit` search-fit effect, and the `TreeControls` component
-  (breadcrumb + Expand/Collapse all + Reset view/layout).
-  - **`RadialTree`** — the original floating radial layout: phylum hulls (convex
-    blobs), greek class tags, gentle float animation; click a hull label/greek tag
-    to focus.
-  - **`Dendrogram`** (in the same file) — a horizontal rectangular cladogram
-    (root at left, orthogonal "elbow" branches fanning right, species labels down
-    the right edge; rank labels on the left-side internal nodes). Uses the
-    **detailed topology** — `buildTaxonomy(species, true)` inserts a class (every
-    phylum) + order layer (phylum → class → order → genus → isolate); the radial
-    and outline keep the lean default. Order labels are display-only. d3 `cluster`
-    projected to cartesian, then each node's horizontal is re-set by **taxonomic
-    rank** (shared columns for realm/kingdom/phylum/… ) rather than tree depth, so
+  `position: fixed`). The container's `items` memo fixes each row's lineage
+  before building: a **`lineageFor`** curated override wins, else **`reclassify`**
+  is applied to the GBIF lineage (so all three views + the detail breadcrumb see
+  the corrected lineage). The two SVG layouts share interaction logic via the
+  `useTreeNav` hook (collapse overrides, focus/re-root, pan/zoom), the `useFit`
+  search-fit effect, and the `TreeControls` component (breadcrumb +
+  Expand/Collapse all + Reset view/layout).
+  - **Focus / re-root** is a **rank-path** (`FocusStep[]` = the chain of
+    `{rank,name}` from root to the focused node), not a single key. `findByPath`
+    re-roots, `pathOf(node, focus)` builds a clicked node's absolute path,
+    `focusCrumb` rebuilds the breadcrumb. So **any** internal rank node (realm …
+    family) is a focus target. (Genus is a collapse toggle, not a focus target.)
+    Collapse keys (`keyOf` → `p:`/`c:`/`g:`) are a separate, still phylum-anchored
+    scheme.
+  - **`RadialTree`** — floating radial layout with convex-hull blobs. The hull
+    encircles each **top-level (depth-1) branch under the current root** — the
+    broadest rank in view: **realm** (supergroup) for parasites, **realm** for
+    viruses, **phylum** for bacteria. Self-adapts on focus (focus a realm → hulls
+    per kingdom). The ranks *below* the hull get small clickable **ring labels**
+    (`.tree__ringlabel`): kingdom+phylum for viruses/parasites, class+order+family
+    for bacteria (Proteobacteria classes still render as α/β/γ greek tags and are
+    excluded from ring labels). Leaves colour by their depth-1 (hull) ancestor.
+  - **`Dendrogram`** (same file) — horizontal rectangular cladogram (root left,
+    orthogonal "elbow" branches fanning right, species labels down the right edge).
+    Uses the **detailed topology** (full chain to family). d3 `cluster` projected
+    to cartesian, then each node's horizontal is re-set by **taxonomic rank**
+    (shared columns for realm/kingdom/phylum/…) rather than tree depth, so
     rank-skipping lineages (e.g. Deltavirus realm→family) still align — the elbow
-    link spans the gap. **Pan + wheel/pinch zoom** (d3-zoom); **click a
-    phylum/class label to focus** (re-root) with a breadcrumb to step back;
-    **Expand all / Collapse all / Reset view / Reset layout**; genera
+    link spans the gap. **Every rank label (realm … family) is click-to-focus**;
+    pan + wheel/pinch zoom; Expand/Collapse all + Reset view/layout; genera
     auto-collapse at ≥3 isolates ("Genus spp.") with a "−" handle; search
-    highlights matches, dims the rest, and fits the view to them. Tips are
-    keyboard-activatable.
+    highlights + fits. Tips keyboard-activatable.
   - **`OutlineTree`** (`components/OutlineTree.tsx`) — an indented, collapsible,
-    keyboard/ARIA-friendly tree; search filters to matching branches.
+    keyboard/ARIA-friendly tree; inherits whatever depth the lean topology has;
+    search filters to matching branches.
   - An **Unplaced** list (GBIF matchType NONE) sits under the tree. Uses
     `d3-zoom` + `d3-selection`.
 - `src/lib/gbif.ts` — `fetchLineage(genus, species, oldName?)`: matches against
   the GBIF backbone (browser-side; GBIF allows CORS). Tries the current name,
-  falls back to `old_name` if it can't be placed.
-- `src/lib/taxonomy.ts` — `buildTaxonomy`, plus three display-time normalisers
-  applied to the **cached** GBIF lineage (so existing rows are corrected without
-  a re-fetch or DB change):
+  falls back to `old_name` if it can't be placed. A **placeholder species**
+  (`sp.` / `spp.` / blank) is looked up as the **genus alone** (GBIF returns NONE
+  for "Genus spp.").
+- `src/lib/taxonomy.ts` — `buildTaxonomy` + helpers. **Non-bacterial back-fill:**
+  `NB_RANKS` (realm…family) / `NB_RADIAL_RANKS` (realm,kingdom,phylum) are the
+  rank chains; `linRank(lin, rank)` reads a rank but treats GBIF's placeholder
+  kingdom **`"Viruses"`** as absent; `ancestryMap(species)` records, across all
+  rows, the fullest higher-rank ancestors seen for each `(rank, name)`, and the
+  build fills any gaps from it (so a partial lineage slots under the same
+  ancestors as a complete one — the original Peploviricota/Plasmodium fork fix).
+  Plus the **bacterial** display-time normalisers applied to the **cached** GBIF
+  lineage (so existing rows are corrected without a re-fetch or DB change):
   - `modernPhylum()` maps GBIF's pre-2021 phylum names to current ICNP names
     (Firmicutes→Bacillota, Proteobacteria→Pseudomonadota,
     Actinobacteriota→Actinomycetota, etc.) and strips GTDB suffixes
@@ -213,6 +243,15 @@ full-width.
   - Both genus override maps are keyed by **lowercase entered genus** and are
     easy to extend as more discrepancies surface — a typo in the entered genus
     makes a row miss its override, so name spelling matters.
+- `src/lib/virusLineage.ts` — `VIRAL_LINEAGES` (curated ICTV genus→lineage map)
+  + `viralLineage()`. Wired as the virus domain's `lineageFor`.
+- `src/lib/parasiteLineage.ts` — `PARASITE_LINEAGES` (curated genus→lineage in
+  the modern supergroup scheme) + `parasiteLineage()`. The virus domain's
+  `lineageFor`'s parasite counterpart; covers genera GBIF mis-kingdoms (Plasmodium,
+  Trichomonas) or can't match (Cryptosporidium, Dientamoeba).
+- `src/lib/parasiteTaxonomy.ts` — `modernEukaryote(lin)`, the parasite
+  `reclassify` hook: GBIF kingdom/phylum → modern supergroup (`BY_PHYLUM`, then
+  `BY_KINGDOM` fallback). Extend the lookup if a new GBIF phylum appears unmapped.
 - `src/components/CustomView.tsx` — the **Board**. User-defined categories →
   subcategories (`src/lib/board.ts` types). Add/rename/delete categories &
   subs, custom colours (swatch picker), collapsible. Drag isolates from a
@@ -232,7 +271,7 @@ full-width.
 - Commit trailers used in this repo:
   ```
   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  Claude-Session: https://claude.ai/code/session_01K6AAGAwXJEHQ4gqynRT3qH
+  Claude-Session: <current session URL>
   ```
 - PRs end with the standard "Generated with Claude Code" line.
 - Each feature ships as its own small PR, merged into `main`.
@@ -248,13 +287,19 @@ full-width.
 - **Virus/parasite panels** are a first draft — tune fields per the user's needs.
   Likewise the new domains' List bands are neutral grey (vs the Gram colours);
   could be domain-tinted. Masthead mark is still the bacterial streak-plate.
-- Extend the curated maps as data grows: `VIRAL_LINEAGES` (viruses GBIF misses),
-  `CLASS_BY_GENUS` / `PHYLUM_BY_GENUS` / `MODERN_ORDER` (bacteria); consider a
-  parasite `lineageFor` if GBIF misses any.
+- Extend the curated maps / lookups as data grows: `VIRAL_LINEAGES`,
+  `PARASITE_LINEAGES`, `parasiteTaxonomy` `BY_PHYLUM`/`BY_KINGDOM` (parasites),
+  `CLASS_BY_GENUS` / `PHYLUM_BY_GENUS` / `MODERN_ORDER` (bacteria).
+- **Parasite deep ranks are coarse** — GBIF's classes (e.g. Amoebozoa "Lobosa")
+  are outdated/uninformative; `modernEukaryote` only fixes supergroup→phylum and
+  keeps GBIF below. Could curate amoebae/flagellate class/order in
+  `PARASITE_LINEAGES` if finer resolution is wanted.
 - Touch-friendly drag-and-drop on the Board (current DnD is native HTML5).
 - Reorder chips within a zone; move subcategories between categories.
 - Tune the genus auto-collapse threshold (3); tighten dendrogram `COL_W` (156)
-  now that columns are rank-fixed.
+  now that columns are rank-fixed. The bacterial radial is now deep
+  (phylum→class→order→family→genus) — order/family ring labels can crowd; could
+  scope them to the focused branch if it feels busy.
 - Optional: confirm on subcategory delete; CSV export of a filtered view.
 - Auth / per-user data if it ever stops being a personal single-user log.
 
@@ -269,6 +314,14 @@ full-width.
   Bacillota). Corrections live in the `CLASS_BY_GENUS` / `PHYLUM_BY_GENUS`
   override maps in `taxonomy.ts` — extend them, don't trust GBIF's class/phylum
   blindly. These apply at display time, so they fix already-cached rows.
+- **GBIF's parasite/protist taxonomy is also unreliable**: it uses the deprecated
+  kingdoms Chromista/Protozoa, scatters/forks taxa across kingdoms (e.g.
+  *Plasmodium falciparum* → Chromista but *P. malariae* → Animalia), and fuzzy-
+  matches misspellings to the wrong organism (*Balantoides coli* → an ostracod
+  arthropod). The supergroup translation (`parasiteTaxonomy.ts`) + curated
+  `PARASITE_LINEAGES` fix this at display time. **Curated/override maps are keyed
+  by the entered genus**, so a genus typo misses them — name spelling matters
+  (the data still needs the genus corrected, e.g. Balantoides→Balantidium).
 - The **"Fetch lineage" button only backfills *unplaced* rows** (no lineage or
   `matchType === "NONE"`); it will **not** re-pull an already-placed isolate.
   The only way to refresh a stale/placed lineage today is to edit + re-save the

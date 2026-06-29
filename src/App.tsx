@@ -21,6 +21,13 @@ export type OwnerNames = Record<string, string>;
 const ALL_OWNERS = "";
 const UNATTRIBUTED = "__none__";
 
+// Filter a list of organisms by an owner sentinel/id.
+function filterByOwner(list: Species[], owner: string): Species[] {
+  if (owner === ALL_OWNERS) return list;
+  if (owner === UNATTRIBUTED) return list.filter((s) => !s.owner);
+  return list.filter((s) => s.owner === owner);
+}
+
 export default function App() {
   const { user } = useAuth();
   const currentUserId = user?.id ?? null;
@@ -43,6 +50,13 @@ export default function App() {
   // value is an explicit pick from the dropdown.
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const effectiveOwner = ownerFilter !== null ? ownerFilter : currentUserId ?? ALL_OWNERS;
+  // Board view has two independent pickers: which board to display, and which
+  // contributor's organisms fill the draggable palette. null = use the default.
+  const [boardOwnerFilter, setBoardOwnerFilter] = useState<string | null>(null);
+  const [poolOwnerFilter, setPoolOwnerFilter] = useState<string | null>(null);
+  // Board defaults to your own; palette defaults to everyone's organisms.
+  const boardViewOwner = boardOwnerFilter !== null ? boardOwnerFilter : currentUserId;
+  const poolViewOwner = poolOwnerFilter !== null ? poolOwnerFilter : ALL_OWNERS;
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -111,18 +125,29 @@ export default function App() {
     return opts;
   }, [species, ownerNames, currentUserId]);
 
-  // The rows actually shown in the List and Tree, after the contributor filter.
-  const visibleSpecies = useMemo(() => {
-    if (effectiveOwner === ALL_OWNERS) return species;
-    if (effectiveOwner === UNATTRIBUTED) return species.filter((s) => !s.owner);
-    return species.filter((s) => s.owner === effectiveOwner);
-  }, [species, effectiveOwner]);
+  // The rows shown in the List and Tree, after the "Viewing" contributor filter.
+  const visibleSpecies = useMemo(
+    () => filterByOwner(species, effectiveOwner),
+    [species, effectiveOwner],
+  );
 
-  // Which contributor's board the Board view shows. A specific contributor maps
-  // to their board; "All contributors" / "Unattributed" fall back to your own
-  // board (there's no aggregate board). Null for a signed-out guest.
-  const boardViewOwner =
-    effectiveOwner === ALL_OWNERS || effectiveOwner === UNATTRIBUTED ? currentUserId : effectiveOwner;
+  // The organisms shown in the Board palette, after the "Organisms" filter.
+  const boardPoolSpecies = useMemo(
+    () => filterByOwner(species, poolViewOwner),
+    [species, poolViewOwner],
+  );
+
+  // Selectable boards for the Board dropdown: your own first, then every other
+  // contributor that has organisms (a proxy for "users who may have a board").
+  const boardOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [];
+    if (currentUserId) opts.push({ value: currentUserId, label: "My board" });
+    for (const o of ownerOptions) {
+      if (o.value === ALL_OWNERS || o.value === UNATTRIBUTED || o.value === currentUserId) continue;
+      opts.push({ value: o.value, label: o.label });
+    }
+    return opts;
+  }, [ownerOptions, currentUserId]);
 
   // The signed-in user's own rows — used for duplicate detection in the form, so
   // logging a name only clashes with your own list, not other people's.
@@ -239,13 +264,18 @@ export default function App() {
     setFormOpen(false);
     setSpecies([]);
     setOwnerFilter(null); // back to the default (your own list) for the new section
+    setBoardOwnerFilter(null);
+    setPoolOwnerFilter(null);
     setLoading(isSupabaseConfigured);
   }, []);
 
   return (
     <DomainProvider config={config}>
     <div className="shell">
-      <Header count={visibleSpecies.length} config={config} />
+      <Header
+        count={view === "custom" ? boardPoolSpecies.length : visibleSpecies.length}
+        config={config}
+      />
 
       <AuthPanel />
 
@@ -264,25 +294,69 @@ export default function App() {
         ))}
       </div>
 
-      {ownerOptions.length > 1 && (
-        <div className="ownerbar">
-          <label className="ownerbar__label" htmlFor="owner-filter">
-            Viewing
-          </label>
-          <select
-            id="owner-filter"
-            className="ownerbar__select"
-            value={effectiveOwner}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-          >
-            {ownerOptions.map((o) => (
-              <option key={o.value || "all"} value={o.value}>
-                {o.label} ({o.count})
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {view === "custom"
+        ? (boardOptions.length > 0 || ownerOptions.length > 1) && (
+            <div className="ownerbar">
+              {boardOptions.length > 0 && (
+                <>
+                  <label className="ownerbar__label" htmlFor="board-filter">
+                    Board
+                  </label>
+                  <select
+                    id="board-filter"
+                    className="ownerbar__select"
+                    value={boardViewOwner ?? ""}
+                    onChange={(e) => setBoardOwnerFilter(e.target.value)}
+                  >
+                    {boardOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {/* The organisms picker only matters when editing your own board. */}
+              {boardViewOwner && boardViewOwner === currentUserId && ownerOptions.length > 1 && (
+                <>
+                  <label className="ownerbar__label" htmlFor="pool-filter">
+                    Organisms
+                  </label>
+                  <select
+                    id="pool-filter"
+                    className="ownerbar__select"
+                    value={poolViewOwner}
+                    onChange={(e) => setPoolOwnerFilter(e.target.value)}
+                  >
+                    {ownerOptions.map((o) => (
+                      <option key={o.value || "all"} value={o.value}>
+                        {o.label} ({o.count})
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+          )
+        : ownerOptions.length > 1 && (
+            <div className="ownerbar">
+              <label className="ownerbar__label" htmlFor="owner-filter">
+                Viewing
+              </label>
+              <select
+                id="owner-filter"
+                className="ownerbar__select"
+                value={effectiveOwner}
+                onChange={(e) => setOwnerFilter(e.target.value)}
+              >
+                {ownerOptions.map((o) => (
+                  <option key={o.value || "all"} value={o.value}>
+                    {o.label} ({o.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
       {!isSupabaseConfigured && <SetupBanner />}
 
@@ -357,7 +431,7 @@ export default function App() {
           ) : (
             <CustomView
               species={species}
-              poolSpecies={visibleSpecies}
+              poolSpecies={boardPoolSpecies}
               viewOwner={boardViewOwner}
               ownerLabel={boardViewOwner ? ownerNames[boardViewOwner] ?? null : null}
               onEdit={handleEdit}

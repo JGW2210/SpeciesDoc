@@ -118,6 +118,12 @@ export default function App() {
     return species.filter((s) => s.owner === effectiveOwner);
   }, [species, effectiveOwner]);
 
+  // Which contributor's board the Board view shows. A specific contributor maps
+  // to their board; "All contributors" / "Unattributed" fall back to your own
+  // board (there's no aggregate board). Null for a signed-out guest.
+  const boardViewOwner =
+    effectiveOwner === ALL_OWNERS || effectiveOwner === UNATTRIBUTED ? currentUserId : effectiveOwner;
+
   // The signed-in user's own rows — used for duplicate detection in the form, so
   // logging a name only clashes with your own list, not other people's.
   const mySpecies = useMemo(
@@ -349,7 +355,13 @@ export default function App() {
               onEdit={handleEdit}
             />
           ) : (
-            <CustomView species={species} poolSpecies={visibleSpecies} onEdit={handleEdit} />
+            <CustomView
+              species={species}
+              poolSpecies={visibleSpecies}
+              viewOwner={boardViewOwner}
+              ownerLabel={boardViewOwner ? ownerNames[boardViewOwner] ?? null : null}
+              onEdit={handleEdit}
+            />
           )}
         </section>
       </main>

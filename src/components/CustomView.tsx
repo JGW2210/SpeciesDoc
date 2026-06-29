@@ -28,16 +28,29 @@ interface CustomViewProps {
   species: Species[];
   // The contributor-filtered set shown in the draggable palette.
   poolSpecies: Species[];
+  // Whose board to display (from the contributor dropdown). Null = no board
+  // (signed-out guest). Editing is allowed only when this is the signed-in user.
+  viewOwner: string | null;
+  // Public label of the displayed board's owner, for the read-only notice.
+  ownerLabel: string | null;
   onEdit: (s: Species) => void;
 }
 
-export default function CustomView({ species, poolSpecies, onEdit }: CustomViewProps) {
+export default function CustomView({
+  species,
+  poolSpecies,
+  viewOwner,
+  ownerLabel,
+  onEdit,
+}: CustomViewProps) {
   const { boardId } = useDomain();
   const { user } = useAuth();
-  // The Board is a personal workspace, saved per user. A ref keeps the current
-  // id available to the unmount flush without re-binding that effect.
-  const userIdRef = useRef<string | null>(null);
-  userIdRef.current = user?.id ?? null;
+  // You can only edit your own board; everyone else's is read-only.
+  const readOnly = !user || viewOwner == null || viewOwner !== user.id;
+  // A ref keeps read-only status available to the unmount flush without
+  // re-binding that effect.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const [board, setBoard] = useState<Board>(EMPTY_BOARD);
   const [query, setQuery] = useState("");
   const [overSub, setOverSub] = useState<string | null>(null);
@@ -62,25 +75,27 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
   const byId = useMemo(() => new Map(species.map((s) => [s.id, s])), [species]);
 
   const writeBoard = async (b: Board): Promise<boolean> => {
-    const owner = userIdRef.current;
-    if (!supabase || !owner) return false; // only signed-in users have a saved board
+    // Only the signed-in owner of the displayed board may save it.
+    if (!supabase || readOnlyRef.current || !user) return false;
     const { error } = await supabase
       .from("board")
       .upsert(
-        { id: boardId, owner, data: b, updated_at: new Date().toISOString() },
+        { id: boardId, owner: user.id, data: b, updated_at: new Date().toISOString() },
         { onConflict: "owner,id" },
       );
     return !error;
   };
 
-  // Load this user's saved board. Re-runs when the signed-in user changes, so
-  // signing in/out swaps in the right workspace (RLS only returns your own row).
+  // Load the displayed contributor's saved board. Re-runs when the selected
+  // owner (or section) changes. Reads are public, so other users' boards load
+  // too — they just render read-only.
   useEffect(() => {
     let active = true;
     loaded.current = false;
     setBoard(EMPTY_BOARD);
+    setSaveState("idle");
     (async () => {
-      if (!supabase || !user) {
+      if (!supabase || !viewOwner) {
         loaded.current = true;
         return;
       }
@@ -88,7 +103,7 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
         .from("board")
         .select("data")
         .eq("id", boardId)
-        .eq("owner", user.id)
+        .eq("owner", viewOwner)
         .maybeSingle();
       if (active && data?.data) setBoard(normalizeBoard(data.data as Board));
       loaded.current = true;
@@ -96,25 +111,25 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
     return () => {
       active = false;
     };
-  }, [boardId, user]);
+  }, [boardId, viewOwner]);
 
-  // Debounced persist on every change (after the initial load). Only signed-in
-  // users persist; a guest can arrange locally but nothing is saved.
+  // Debounced persist on every change (after the initial load). Only the owner
+  // of the board persists; read-only viewers never write.
   useEffect(() => {
-    if (!loaded.current || !supabase || !user) return;
+    if (!loaded.current || !supabase || readOnly) return;
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await writeBoard(board);
       setSaveState(ok ? "saved" : "error");
     }, 500);
     return () => clearTimeout(t);
-  }, [board, user]);
+  }, [board, readOnly]);
 
   // Flush the latest state when leaving the view, so a pending debounce isn't
   // lost on unmount (the previous cause of changes not persisting).
   useEffect(() => {
     return () => {
-      if (loaded.current && supabase && userIdRef.current) void writeBoard(boardRef.current);
+      if (loaded.current && supabase && !readOnlyRef.current) void writeBoard(boardRef.current);
     };
   }, []);
 
@@ -211,15 +226,21 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
       <div
         className={`csub__drop${overSub === key ? " is-over" : ""}`}
         style={{ ["--sub" as string]: color }}
-        onDragOver={(e) => {
-          if (drag) return; // a category/subcategory reorder is in progress
-          e.preventDefault();
-          if (overSub !== key) setOverSub(key);
-        }}
-        onDragLeave={() => setOverSub((cur) => (cur === key ? null : cur))}
-        onDrop={handleDrop(catId, subId)}
+        onDragOver={
+          readOnly
+            ? undefined
+            : (e) => {
+                if (drag) return; // a category/subcategory reorder is in progress
+                e.preventDefault();
+                if (overSub !== key) setOverSub(key);
+              }
+        }
+        onDragLeave={readOnly ? undefined : () => setOverSub((cur) => (cur === key ? null : cur))}
+        onDrop={readOnly ? undefined : handleDrop(catId, subId)}
       >
-        {ids.length === 0 && <span className="cboard__empty">Drag isolates here</span>}
+        {ids.length === 0 && (
+          <span className="cboard__empty">{readOnly ? "Empty" : "Drag isolates here"}</span>
+        )}
         {ids.map((id) => {
           const s = byId.get(id);
           if (!s) return null;
@@ -229,9 +250,10 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
               s={s}
               from={{ catId, subId }}
               expandable
+              draggable={!readOnly}
               defaultOpen={allOpen}
               onOpen={() => onEdit(s)}
-              onRemove={() => removeIsolate(catId, subId, id)}
+              onRemove={readOnly ? undefined : () => removeIsolate(catId, subId, id)}
             />
           );
         })}
@@ -255,9 +277,11 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
         <div>
           <h2 className="cboard__title">Custom board</h2>
           <p className="cboard__sub">
-            {user
-              ? "Build your own categories and drag isolates in from the palette."
-              : "Sign in to build and save your own board — guest changes won’t be kept."}
+            {readOnly && viewOwner
+              ? `Viewing ${ownerLabel ?? "another contributor"}’s board — read-only.`
+              : user
+                ? "Build your own categories and drag isolates in from the palette."
+                : "Sign in to build and save your own board — guest changes won’t be kept."}
           </p>
         </div>
         <div className="cboard__baracts">
@@ -274,38 +298,46 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
           >
             {allOpen ? "Collapse all" : "Expand all"}
           </button>
-          <button type="button" className="btn btn--primary" onClick={addCategory}>
-            + Add category
-          </button>
-        </div>
-      </div>
-
-      {/* palette of all isolates to drag from */}
-      <div className="cpool">
-        <div className="cpool__head">
-          <span className="cpool__label">All isolates</span>
-          <input
-            className="list__search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter…"
-            aria-label="Filter isolates"
-          />
-        </div>
-        <div className="cpool__wrap">
-          {pool.length === 0 ? (
-            <span className="cboard__empty">No isolates.</span>
-          ) : (
-            pool.map((s) => <Chip key={s.id} s={s} from={null} />)
+          {!readOnly && (
+            <button type="button" className="btn btn--primary" onClick={addCategory}>
+              + Add category
+            </button>
           )}
         </div>
       </div>
 
+      {/* palette of all isolates to drag from (hidden when viewing read-only) */}
+      {!readOnly && (
+        <div className="cpool">
+          <div className="cpool__head">
+            <span className="cpool__label">All isolates</span>
+            <input
+              className="list__search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter…"
+              aria-label="Filter isolates"
+            />
+          </div>
+          <div className="cpool__wrap">
+            {pool.length === 0 ? (
+              <span className="cboard__empty">No isolates.</span>
+            ) : (
+              pool.map((s) => <Chip key={s.id} s={s} from={null} />)
+            )}
+          </div>
+        </div>
+      )}
+
       {board.categories.length === 0 ? (
         <div className="empty">
-          <p className="empty__head">No categories yet.</p>
-          <p className="empty__sub">Add a category, then drag isolates from the palette into its subcategories.</p>
+          <p className="empty__head">{readOnly ? "This board is empty." : "No categories yet."}</p>
+          {!readOnly && (
+            <p className="empty__sub">
+              Add a category, then drag isolates from the palette into its subcategories.
+            </p>
+          )}
         </div>
       ) : (
         <div className="cboard__cats">
@@ -339,19 +371,21 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
                     endReorder();
                   }}
                 >
-                  <span
-                    className="grip"
-                    draggable
-                    title="Drag to reorder"
-                    onDragStart={(e) => {
-                      setDrag({ kind: "cat", catId: cat.id });
-                      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "cat" }));
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onDragEnd={endReorder}
-                  >
-                    ⠿
-                  </span>
+                  {!readOnly && (
+                    <span
+                      className="grip"
+                      draggable
+                      title="Drag to reorder"
+                      onDragStart={(e) => {
+                        setDrag({ kind: "cat", catId: cat.id });
+                        e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "cat" }));
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={endReorder}
+                    >
+                      ⠿
+                    </span>
+                  )}
                   <button
                     type="button"
                     className={`chev${cat.collapsed ? "" : " is-open"}`}
@@ -360,25 +394,34 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
                   >
                     ▸
                   </button>
-                  <ColorDot color={cat.color} onPick={(c) => mutateCat(cat.id, (x) => ({ ...x, color: c }))} />
+                  <ColorDot
+                    color={cat.color}
+                    readOnly={readOnly}
+                    onPick={(c) => mutateCat(cat.id, (x) => ({ ...x, color: c }))}
+                  />
                   <input
                     className="ccat__name"
                     value={cat.name}
+                    readOnly={readOnly}
                     onChange={(e) => mutateCat(cat.id, (c) => ({ ...c, name: e.target.value }))}
                     aria-label="Category name"
                   />
                   <span className="ccat__count">{total}</span>
-                  <button type="button" className="ccat__act" onClick={() => addSub(cat.id)}>
-                    + Subcategory
-                  </button>
-                  <button
-                    type="button"
-                    className="ccat__del"
-                    title="Delete category"
-                    onClick={() => removeCategory(cat.id)}
-                  >
-                    ×
-                  </button>
+                  {!readOnly && (
+                    <>
+                      <button type="button" className="ccat__act" onClick={() => addSub(cat.id)}>
+                        + Subcategory
+                      </button>
+                      <button
+                        type="button"
+                        className="ccat__del"
+                        title="Delete category"
+                        onClick={() => removeCategory(cat.id)}
+                      >
+                        ×
+                      </button>
+                    </>
+                  )}
                 </header>
 
                 {!cat.collapsed && (
@@ -412,19 +455,21 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
                                   endReorder();
                                 }}
                               >
-                                <span
-                                  className="grip"
-                                  draggable
-                                  title="Drag to reorder"
-                                  onDragStart={(e) => {
-                                    setDrag({ kind: "sub", catId: cat.id, subId: sub.id });
-                                    e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "sub" }));
-                                    e.dataTransfer.effectAllowed = "move";
-                                  }}
-                                  onDragEnd={endReorder}
-                                >
-                                  ⠿
-                                </span>
+                                {!readOnly && (
+                                  <span
+                                    className="grip"
+                                    draggable
+                                    title="Drag to reorder"
+                                    onDragStart={(e) => {
+                                      setDrag({ kind: "sub", catId: cat.id, subId: sub.id });
+                                      e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "sub" }));
+                                      e.dataTransfer.effectAllowed = "move";
+                                    }}
+                                    onDragEnd={endReorder}
+                                  >
+                                    ⠿
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   className={`chev${sub.collapsed ? "" : " is-open"}`}
@@ -437,25 +482,29 @@ export default function CustomView({ species, poolSpecies, onEdit }: CustomViewP
                                 </button>
                                 <ColorDot
                                   color={subColor}
+                                  readOnly={readOnly}
                                   onPick={(c) => mutateSub(cat.id, sub.id, (s) => ({ ...s, color: c }))}
                                 />
                                 <input
                                   className="csub__name"
                                   value={sub.name}
+                                  readOnly={readOnly}
                                   onChange={(e) =>
                                     mutateSub(cat.id, sub.id, (s) => ({ ...s, name: e.target.value }))
                                   }
                                   aria-label="Subcategory name"
                                 />
                                 <span className="csub__count">{sub.isolateIds.length}</span>
-                                <button
-                                  type="button"
-                                  className="ccat__del"
-                                  title="Delete subcategory"
-                                  onClick={() => removeSub(cat.id, sub.id)}
-                                >
-                                  ×
-                                </button>
+                                {!readOnly && (
+                                  <button
+                                    type="button"
+                                    className="ccat__del"
+                                    title="Delete subcategory"
+                                    onClick={() => removeSub(cat.id, sub.id)}
+                                  >
+                                    ×
+                                  </button>
+                                )}
                               </header>
                               {!sub.collapsed && renderDrop(cat.id, sub.id, sub.isolateIds, subColor)}
                             </div>
@@ -481,9 +530,11 @@ interface ChipProps {
   onOpen?: () => void;
   expandable?: boolean;
   defaultOpen?: boolean;
+  // Drag is disabled when viewing another contributor's board read-only.
+  draggable?: boolean;
 }
 
-function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen }: ChipProps) {
+function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen, draggable = true }: ChipProps) {
   const [open, setOpen] = useState(!!defaultOpen);
   // Sync to the board-wide expand/collapse toggle.
   useEffect(() => setOpen(!!defaultOpen), [defaultOpen]);
@@ -494,7 +545,7 @@ function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen }: ChipProps)
 
   if (!expandable) {
     return (
-      <span className="cchip" draggable onDragStart={dragStart}>
+      <span className="cchip" draggable={draggable} onDragStart={draggable ? dragStart : undefined}>
         <em className="cchip__name" onClick={onOpen} title={onOpen ? "Edit isolate" : undefined}>
           {binomial(s.genus, s.species)}
         </em>
@@ -508,7 +559,11 @@ function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen }: ChipProps)
   }
 
   return (
-    <span className={`cchip cchip--card${open ? " cchip--open" : ""}`} draggable onDragStart={dragStart}>
+    <span
+      className={`cchip cchip--card${open ? " cchip--open" : ""}`}
+      draggable={draggable}
+      onDragStart={draggable ? dragStart : undefined}
+    >
       <span className="cchip__row">
         <button
           type="button"
@@ -537,8 +592,24 @@ function Chip({ s, from, onRemove, onOpen, expandable, defaultOpen }: ChipProps)
   );
 }
 
-function ColorDot({ color, onPick }: { color: string; onPick: (c: string) => void }) {
+function ColorDot({
+  color,
+  onPick,
+  readOnly,
+}: {
+  color: string;
+  onPick: (c: string) => void;
+  readOnly?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  // Read-only: show the colour swatch but don't open the picker.
+  if (readOnly) {
+    return (
+      <span className="cdot">
+        <span className="cdot__btn" style={{ background: color }} aria-hidden="true" />
+      </span>
+    );
+  }
   return (
     <span className="cdot">
       <button

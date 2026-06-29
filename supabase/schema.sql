@@ -128,9 +128,14 @@ create table if not exists public.board (
 
 alter table public.board enable row level security;
 
+-- Public read so anyone can view any user's board; writes stay owner-only.
 drop policy if exists "Public full access to board" on public.board;
 drop policy if exists "Owner all board"             on public.board;
-create policy "Owner all board"
+drop policy if exists "Public read board"           on public.board;
+drop policy if exists "Owner write board"           on public.board;
+create policy "Public read board"
+  on public.board for select to anon, authenticated using (true);
+create policy "Owner write board"
   on public.board for all to authenticated
   using (auth.uid() = owner) with check (auth.uid() = owner);
 

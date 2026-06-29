@@ -164,7 +164,12 @@ alter table public.board add constraint board_pkey primary key (owner, id);
 
 drop policy if exists "Public full access to board" on public.board;
 drop policy if exists "Owner all board"             on public.board;
-create policy "Owner all board"
+drop policy if exists "Public read board"           on public.board;
+drop policy if exists "Owner write board"           on public.board;
+-- Public read so anyone can view any user's board; writes stay owner-only.
+create policy "Public read board"
+  on public.board for select to anon, authenticated using (true);
+create policy "Owner write board"
   on public.board for all
   to authenticated
   using (auth.uid() = owner)

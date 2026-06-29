@@ -2515,6 +2515,35 @@ textarea {
   font-size: 0.85rem;
 }
 
+/* Contributor filter dropdown (between the section tabs and the views). */
+.ownerbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.ownerbar__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ownerbar__select {
+  flex: 0 1 280px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.ownerbar__select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Owner badge on a list card: "you" or another user's label. */
 .card__owner {
   margin-left: auto;

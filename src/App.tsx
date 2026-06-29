@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import { useAuth } from "./lib/auth";
 import { fetchLineage } from "./lib/gbif";
@@ -17,6 +17,10 @@ type View = "list" | "tree" | "custom";
 // Public label for an owner id, drawn from the public `profiles` table.
 export type OwnerNames = Record<string, string>;
 
+// Contributor-filter sentinels: "" = everyone, this = rows with no owner.
+const ALL_OWNERS = "";
+const UNATTRIBUTED = "__none__";
+
 export default function App() {
   const { user } = useAuth();
   const currentUserId = user?.id ?? null;
@@ -34,6 +38,11 @@ export default function App() {
   const [formOpen, setFormOpen] = useState(false);
   const [view, setView] = useState<View>("list");
   const [enriching, setEnriching] = useState(false);
+  // Which contributor's entries to show. null = use the default, which is the
+  // signed-in user's own list (or everyone, for a signed-out guest). A non-null
+  // value is an explicit pick from the dropdown.
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const effectiveOwner = ownerFilter !== null ? ownerFilter : currentUserId ?? ALL_OWNERS;
 
   const load = useCallback(async () => {
     if (!supabase) {
@@ -76,6 +85,45 @@ export default function App() {
       active = false;
     };
   }, []);
+
+  // Contributor options for the dropdown: always "All", then "My entries" when
+  // signed in, then every other contributor that has rows in this list.
+  const ownerOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of species) {
+      const key = s.owner ?? UNATTRIBUTED;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const opts: { value: string; label: string; count: number }[] = [
+      { value: ALL_OWNERS, label: "All contributors", count: species.length },
+    ];
+    if (currentUserId) {
+      opts.push({ value: currentUserId, label: "My entries", count: counts.get(currentUserId) ?? 0 });
+    }
+    for (const [key, n] of counts) {
+      if (key === currentUserId) continue; // already shown as "My entries"
+      opts.push({
+        value: key,
+        label: key === UNATTRIBUTED ? "Unattributed" : ownerNames[key] ?? "Unknown user",
+        count: n,
+      });
+    }
+    return opts;
+  }, [species, ownerNames, currentUserId]);
+
+  // The rows actually shown in the List and Tree, after the contributor filter.
+  const visibleSpecies = useMemo(() => {
+    if (effectiveOwner === ALL_OWNERS) return species;
+    if (effectiveOwner === UNATTRIBUTED) return species.filter((s) => !s.owner);
+    return species.filter((s) => s.owner === effectiveOwner);
+  }, [species, effectiveOwner]);
+
+  // The signed-in user's own rows — used for duplicate detection in the form, so
+  // logging a name only clashes with your own list, not other people's.
+  const mySpecies = useMemo(
+    () => (currentUserId ? species.filter((s) => s.owner === currentUserId) : []),
+    [species, currentUserId],
+  );
 
   // Best-effort: fetch GBIF lineage for one isolate and cache it on the row.
   // Silently no-ops if the lineage column is missing or the lookup fails, so it
@@ -184,13 +232,14 @@ export default function App() {
     setView("list");
     setFormOpen(false);
     setSpecies([]);
+    setOwnerFilter(null); // back to the default (your own list) for the new section
     setLoading(isSupabaseConfigured);
   }, []);
 
   return (
     <DomainProvider config={config}>
     <div className="shell">
-      <Header count={species.length} config={config} />
+      <Header count={view === "custom" ? species.length : visibleSpecies.length} config={config} />
 
       <AuthPanel />
 
@@ -208,6 +257,26 @@ export default function App() {
           </button>
         ))}
       </div>
+
+      {ownerOptions.length > 1 && view !== "custom" && (
+        <div className="ownerbar">
+          <label className="ownerbar__label" htmlFor="owner-filter">
+            Viewing
+          </label>
+          <select
+            id="owner-filter"
+            className="ownerbar__select"
+            value={effectiveOwner}
+            onChange={(e) => setOwnerFilter(e.target.value)}
+          >
+            {ownerOptions.map((o) => (
+              <option key={o.value || "all"} value={o.value}>
+                {o.label} ({o.count})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {!isSupabaseConfigured && <SetupBanner />}
 
@@ -253,7 +322,7 @@ export default function App() {
             <SpeciesForm
               onSubmit={handleSubmit}
               editing={editing}
-              species={species}
+              species={mySpecies}
               onEditExisting={handleEdit}
               onCancelEdit={closeForm}
               disabled={!canEdit}
@@ -264,7 +333,7 @@ export default function App() {
         <section className="layout__list">
           {view === "list" ? (
             <SpeciesList
-              species={species}
+              species={visibleSpecies}
               loading={loading}
               editingId={editing?.id ?? null}
               currentUserId={currentUserId}
@@ -274,7 +343,7 @@ export default function App() {
             />
           ) : view === "tree" ? (
             <TreeView
-              species={species}
+              species={visibleSpecies}
               enriching={enriching}
               onRefreshLineage={refreshLineage}
               onEdit={handleEdit}

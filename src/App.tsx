@@ -239,7 +239,7 @@ export default function App() {
   return (
     <DomainProvider config={config}>
     <div className="shell">
-      <Header count={view === "custom" ? species.length : visibleSpecies.length} config={config} />
+      <Header count={visibleSpecies.length} config={config} />
 
       <AuthPanel />
 
@@ -258,7 +258,7 @@ export default function App() {
         ))}
       </div>
 
-      {ownerOptions.length > 1 && view !== "custom" && (
+      {ownerOptions.length > 1 && (
         <div className="ownerbar">
           <label className="ownerbar__label" htmlFor="owner-filter">
             Viewing
@@ -349,7 +349,7 @@ export default function App() {
               onEdit={handleEdit}
             />
           ) : (
-            <CustomView species={species} onEdit={handleEdit} />
+            <CustomView species={species} poolSpecies={visibleSpecies} onEdit={handleEdit} />
           )}
         </section>
       </main>

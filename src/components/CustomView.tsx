@@ -23,11 +23,15 @@ interface DragData {
 }
 
 interface CustomViewProps {
+  // The full set, used to resolve the ids held in a saved arrangement so chips
+  // always render regardless of the contributor filter.
   species: Species[];
+  // The contributor-filtered set shown in the draggable palette.
+  poolSpecies: Species[];
   onEdit: (s: Species) => void;
 }
 
-export default function CustomView({ species, onEdit }: CustomViewProps) {
+export default function CustomView({ species, poolSpecies, onEdit }: CustomViewProps) {
   const { boardId } = useDomain();
   const { user } = useAuth();
   // The Board is a personal workspace, saved per user. A ref keeps the current
@@ -238,12 +242,12 @@ export default function CustomView({ species, onEdit }: CustomViewProps) {
   const pool = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = q
-      ? species.filter((s) => binomial(s.genus, s.species).toLowerCase().includes(q))
-      : species;
+      ? poolSpecies.filter((s) => binomial(s.genus, s.species).toLowerCase().includes(q))
+      : poolSpecies;
     return [...list].sort((a, b) =>
       binomial(a.genus, a.species).localeCompare(binomial(b.genus, b.species)),
     );
-  }, [species, query]);
+  }, [poolSpecies, query]);
 
   return (
     <div className="cboard">

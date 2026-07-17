@@ -1,4 +1,5 @@
 import type { Lineage } from "../types";
+import { binomial } from "./format";
 
 // One GBIF backbone match. Returns a Lineage with matchType "NONE" when nothing
 // matched, or null on a network/HTTP failure so callers can leave the cached
@@ -52,9 +53,16 @@ export async function fetchLineage(
 ): Promise<Lineage | null> {
   // A placeholder epithet ("sp."/"spp."/blank) isn't a real name — GBIF often
   // returns NONE for "Genus spp.", so look the genus up on its own instead.
+  // Normalise to binomial casing (capitalised genus, lower-case epithet) before
+  // querying: GBIF's name parser returns matchType NONE for a capitalised
+  // epithet like "Yersinia Enterocolitica", so a correctly-spelled row entered
+  // with odd casing would otherwise never place.
   const sp = species.trim();
   const genusOnly = sp === "" || /^spp?\.?$/i.test(sp);
-  const primary = genusOnly ? genus.trim() : `${genus} ${species}`.trim();
+  const g = genus.trim();
+  const primary = genusOnly
+    ? g.charAt(0).toUpperCase() + g.slice(1).toLowerCase()
+    : binomial(genus, species);
   const main = await matchName(primary);
   if (placed(main)) return main;
 

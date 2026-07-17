@@ -215,7 +215,13 @@ export default function App() {
   const refreshLineage = useCallback(async () => {
     setEnriching(true);
     try {
-      const targets = species.filter((s) => !s.lineage || s.lineage.matchType === "NONE");
+      // Re-fetch anything without a usable placement: no lineage, an explicit
+      // NONE, or a match GBIF returned without a phylum. The last case lets a
+      // curated override (lineageFor) reach rows GBIF placed only to a higher
+      // rank, which a NONE-only filter would skip.
+      const targets = species.filter(
+        (s) => !s.lineage || s.lineage.matchType === "NONE" || !s.lineage.phylum,
+      );
       for (const s of targets) {
         await enrichOne(s);
       }

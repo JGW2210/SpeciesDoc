@@ -2,6 +2,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Category, CategoryGroup } from "../data/categories";
 import { CATEGORIES, CATEGORY_GROUPS, DEFAULT_OPEN_GROUPS } from "../data/categories";
 import { GRAM_GROUPS, gramGroupOf } from "../lib/format";
+import { bacterialLineage } from "../lib/bacterialLineage";
 import type { Lineage, Specimen } from "../types";
 import { VIRUS } from "./virus";
 import { PARASITE } from "./parasite";
@@ -60,6 +61,8 @@ export const BACTERIA: DomainConfig = {
   bands: GRAM_GROUPS,
   bandOf: gramGroupOf,
   bacterial: true,
+  // Curated fallback for genera GBIF's backbone can't place (e.g. Yersinia).
+  lineageFor: bacterialLineage,
 };
 
 export const DOMAINS: DomainConfig[] = [BACTERIA, VIRUS, PARASITE];
